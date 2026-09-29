@@ -10,6 +10,9 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Documentation-only pushes don't redeploy (run it by hand if needed).
+    paths-ignore:
+      - "**.md"
   workflow_dispatch:
 
 # One rollout at a time; a newer push waits rather than interrupting a migration.

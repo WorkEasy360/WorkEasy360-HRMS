@@ -10,12 +10,13 @@ backend/      # Node.js + Express + PostgreSQL API
 README.md
 ```
 
-> Production deployment (EC2 + shared Aurora PostgreSQL, deployed by GitHub Actions): see [deploy/README.md](./deploy/README.md).
+> **Developers start here: [DEVELOPMENT.md](./DEVELOPMENT.md)** — local setup, code map, conventions, and how to ship.
+> Production deployment (EC2 + shared Aurora PostgreSQL, deployed by GitHub Actions): [deploy/README.md](./deploy/README.md). Live: https://52-66-103-213.sslip.io
 
 ## Prerequisites
 
 - Node.js 20+
-- PostgreSQL 14+ running locally (or a connection string to one)
+- PostgreSQL 14+ — locally the Docker container `workeasy-postgres` on port 5433 (see DEVELOPMENT.md)
 
 ## Backend setup
 
