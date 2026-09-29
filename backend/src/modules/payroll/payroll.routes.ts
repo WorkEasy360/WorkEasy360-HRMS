@@ -78,8 +78,55 @@ router.post("/:id/process", requirePermission(PERMISSIONS.PAYROLL_MANAGE), async
 
   const periodEnd = new Date(run.year, run.month, 0);
   const employees = await prisma.employee.findMany({ where: { organizationId, status: "ACTIVE" } });
+  const employeeIds = employees.map((e) => e.id);
 
-  const { payslips, processedRun } = await prisma.$transaction(async (tx) => {
+  // Read everything up front (two queries), so the transaction below only writes.
+  // The database can be a long round trip away; per-employee queries inside the
+  // transaction would make it scale with headcount and time out.
+  const [compensations, activeLoans] = await Promise.all([
+    prisma.compensationRecord.findMany({
+      where: { employeeId: { in: employeeIds }, effectiveFrom: { lte: periodEnd } },
+      orderBy: [{ employeeId: "asc" }, { effectiveFrom: "desc" }],
+    }),
+    prisma.loanRequest.findMany({
+      where: { employeeId: { in: employeeIds }, status: "ACTIVE" },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
+  const latestCompensation = new Map<string, (typeof compensations)[number]>();
+  for (const c of compensations) if (!latestCompensation.has(c.employeeId)) latestCompensation.set(c.employeeId, c);
+  const loansByEmployee = new Map<string, typeof activeLoans>();
+  for (const l of activeLoans) loansByEmployee.set(l.employeeId, [...(loansByEmployee.get(l.employeeId) ?? []), l]);
+
+  const payslipRows: { employeeId: string; grossPay: number; deductions: number; netPay: number }[] = [];
+  const loanUpdates: { id: string; remainingAmount: number; status: "ACTIVE" | "CLOSED" }[] = [];
+  for (const employee of employees) {
+    const compensation = latestCompensation.get(employee.id);
+    if (!compensation) continue; // no compensation on file yet — skipped, not paid
+
+    const grossPay = compensation.monthlyGross;
+    const statutoryDeduction = Math.round(grossPay * PLACEHOLDER_DEDUCTION_RATE * 100) / 100;
+
+    // Auto-deduct active loan EMIs, closing loans that reach zero balance. EMIs are capped by
+    // what's left after statutory deductions so net pay never goes negative; any shortfall
+    // simply stays on the loan's remaining balance.
+    let loanDeduction = 0;
+    let payable = Math.max(0, Math.round((grossPay - statutoryDeduction) * 100) / 100);
+    for (const loan of loansByEmployee.get(employee.id) ?? []) {
+      const installment = Math.round(Math.min(loan.monthlyDeduction ?? 0, loan.remainingAmount ?? 0, payable) * 100) / 100;
+      if (installment <= 0) continue;
+      payable = Math.round((payable - installment) * 100) / 100;
+      loanDeduction += installment;
+      const remaining = Math.round(((loan.remainingAmount ?? 0) - installment) * 100) / 100;
+      loanUpdates.push({ id: loan.id, remainingAmount: remaining, status: remaining <= 0 ? "CLOSED" : "ACTIVE" });
+    }
+
+    const deductions = Math.round((statutoryDeduction + loanDeduction) * 100) / 100;
+    const netPay = Math.max(0, Math.round((grossPay - deductions) * 100) / 100);
+    payslipRows.push({ employeeId: employee.id, grossPay, deductions, netPay });
+  }
+
+  const { created, processedRun } = await prisma.$transaction(async (tx) => {
     // Claim the run first with a conditional update: a concurrent /process call
     // matches zero rows and aborts before any loan balances are touched.
     const { count } = await tx.payrollRun.updateMany({
@@ -88,55 +135,21 @@ router.post("/:id/process", requirePermission(PERMISSIONS.PAYROLL_MANAGE), async
     });
     if (!count) throw new HttpError(409, "This payroll run was already processed");
 
-    const created = [];
-    for (const employee of employees) {
-      const compensation = await tx.compensationRecord.findFirst({
-        where: { employeeId: employee.id, effectiveFrom: { lte: periodEnd } },
-        orderBy: { effectiveFrom: "desc" },
-      });
-      if (!compensation) continue; // no compensation on file yet — skipped, not paid
-
-      const grossPay = compensation.monthlyGross;
-      const statutoryDeduction = Math.round(grossPay * PLACEHOLDER_DEDUCTION_RATE * 100) / 100;
-
-      // Auto-deduct active loan EMIs, closing loans that reach zero balance.
-      const activeLoans = await tx.loanRequest.findMany({
-        where: { employeeId: employee.id, status: "ACTIVE" },
-      });
-      // Loan EMIs are capped by what's left after statutory deductions so net pay never goes negative;
-      // any shortfall simply stays on the loan's remaining balance.
-      let loanDeduction = 0;
-      let payable = Math.max(0, Math.round((grossPay - statutoryDeduction) * 100) / 100);
-      for (const loan of activeLoans) {
-        const installment = Math.round(
-          Math.min(loan.monthlyDeduction ?? 0, loan.remainingAmount ?? 0, payable) * 100,
-        ) / 100;
-        if (installment <= 0) continue;
-        payable = Math.round((payable - installment) * 100) / 100;
-        loanDeduction += installment;
-        const remaining = Math.round(((loan.remainingAmount ?? 0) - installment) * 100) / 100;
-        await tx.loanRequest.update({
-          where: { id: loan.id },
-          data: { remainingAmount: remaining, status: remaining <= 0 ? "CLOSED" : "ACTIVE" },
-        });
-      }
-
-      const deductions = Math.round((statutoryDeduction + loanDeduction) * 100) / 100;
-      const netPay = Math.max(0, Math.round((grossPay - deductions) * 100) / 100);
-
-      const payslip = await tx.payslip.upsert({
-        where: { payrollRunId_employeeId: { payrollRunId: run.id, employeeId: employee.id } },
-        create: { organizationId, payrollRunId: run.id, employeeId: employee.id, grossPay, deductions, netPay },
-        update: { grossPay, deductions, netPay },
-      });
-      created.push({
-        ...payslip,
-        employee: { firstName: employee.firstName, lastName: employee.lastName, employeeCode: employee.employeeCode },
-      });
-    }
-
+    await Promise.all(
+      loanUpdates.map((u) => tx.loanRequest.update({ where: { id: u.id }, data: { remainingAmount: u.remainingAmount, status: u.status } })),
+    );
+    await tx.payslip.deleteMany({ where: { payrollRunId: run.id } });
+    const created = await tx.payslip.createManyAndReturn({
+      data: payslipRows.map((r) => ({ organizationId, payrollRunId: run.id, ...r })),
+    });
     const processedRun = await tx.payrollRun.findUniqueOrThrow({ where: { id: run.id } });
-    return { payslips: created, processedRun };
+    return { created, processedRun };
+  });
+
+  const employeeById = new Map(employees.map((e) => [e.id, e]));
+  const payslips = created.map((p) => {
+    const e = employeeById.get(p.employeeId)!;
+    return { ...p, employee: { firstName: e.firstName, lastName: e.lastName, employeeCode: e.employeeCode } };
   });
 
   await writeAuditLog({

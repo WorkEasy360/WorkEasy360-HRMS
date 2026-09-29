@@ -70,7 +70,20 @@ app.use(
 app.use("/api/auth/register", registerLimiter);
 app.use("/api", rateLimit({ windowMs: 60_000, max: 600, message: "Too many requests. Please slow down." }));
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+// Readiness: 503 when the database is unreachable, so Docker/nginx/monitoring see a real outage.
+async function health(_req: express.Request, res: express.Response) {
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+    ]);
+    res.json({ status: "ok", database: "up" });
+  } catch {
+    res.status(503).json({ status: "error", database: "down" });
+  }
+}
+app.get("/health", health);
+app.get("/api/health", health);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/organizations", organizationsRoutes);

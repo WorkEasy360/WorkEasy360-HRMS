@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "./api";
 
-export type AppConfig = { emailEnabled: boolean };
+export type AppConfig = { emailEnabled: boolean; registrationEnabled: boolean };
 
 // Fetched once per page load and shared by every caller.
 let cached: Promise<AppConfig> | null = null;
@@ -14,7 +14,7 @@ export function useAppConfig(): AppConfig | null {
   useEffect(() => {
     cached ??= apiFetch<AppConfig>("/auth/config").catch(() => {
       cached = null;
-      return { emailEnabled: false };
+      return { emailEnabled: false, registrationEnabled: true };
     });
     let active = true;
     cached.then((c) => active && setConfig(c));

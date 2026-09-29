@@ -10,7 +10,7 @@ backend/      # Node.js + Express + PostgreSQL API
 README.md
 ```
 
-> Deploying to AWS (Aurora / RDS PostgreSQL)? See [DEPLOY.md](./DEPLOY.md) for environment variables, Docker images and a launch checklist.
+> Production deployment (EC2 + shared Aurora PostgreSQL, deployed by GitHub Actions): see [deploy/README.md](./deploy/README.md).
 
 ## Prerequisites
 

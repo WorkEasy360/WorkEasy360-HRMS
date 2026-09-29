@@ -8,6 +8,7 @@ import { errorMessage, useFeedback } from "@/components/feedback";
 import { PasswordInput, PasswordStrength, passwordIssues } from "@/components/PasswordInput";
 import { Button, ErrorBanner } from "@/components/ui";
 import { useAuth } from "@/lib/auth-context";
+import { useAppConfig } from "@/lib/use-app-config";
 
 function slugify(name: string) {
   return name
@@ -20,6 +21,7 @@ function slugify(name: string) {
 
 export default function RegisterPage() {
   const { register } = useAuth();
+  const config = useAppConfig();
   const { toast } = useFeedback();
   const router = useRouter();
   const [form, setForm] = useState({
@@ -59,6 +61,20 @@ export default function RegisterPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (config && !config.registrationEnabled) {
+    return (
+      <AuthShell title="Sign-up is closed" subtitle="New organizations can't be created here.">
+        <p className="text-sm text-slate-600">
+          If your company already uses WorkEasy360, ask your HR administrator to add you, then{" "}
+          <Link href="/login" className="font-medium text-blue-600 hover:underline">
+            sign in
+          </Link>
+          .
+        </p>
+      </AuthShell>
+    );
   }
 
   return (

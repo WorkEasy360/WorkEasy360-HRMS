@@ -104,7 +104,13 @@ const registerSchema = z.object({
 });
 
 // Registers a new organization plus its first Admin user/employee in one transaction.
+// Set ALLOW_PUBLIC_REGISTRATION=false once your organization exists, so nobody else can create one.
+const registrationOpen = () => process.env.ALLOW_PUBLIC_REGISTRATION !== "false";
+
 router.post("/register", async (req, res) => {
+  if (!registrationOpen()) {
+    return res.status(403).json({ error: "New organizations can't be created here. Ask your administrator for an account." });
+  }
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -265,7 +271,7 @@ router.post("/change-password", requireAuth, async (req, res) => {
 
 // Lets the sign-in page know whether self-service password reset is available.
 router.get("/config", (_req, res) => {
-  res.json({ emailEnabled: isEmailEnabled() });
+  res.json({ emailEnabled: isEmailEnabled(), registrationEnabled: registrationOpen() });
 });
 
 const forgotSchema = z.object({

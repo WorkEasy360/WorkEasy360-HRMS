@@ -178,12 +178,14 @@ export default function LoginPage() {
           Sign in
         </Button>
 
-        <p className="text-center text-sm text-slate-500">
-          Setting up for a new company?{" "}
-          <Link href="/register" className="font-medium text-blue-600 hover:underline">
-            Create an organization
-          </Link>
-        </p>
+        {config?.registrationEnabled && (
+          <p className="text-center text-sm text-slate-500">
+            Setting up for a new company?{" "}
+            <Link href="/register" className="font-medium text-blue-600 hover:underline">
+              Create an organization
+            </Link>
+          </p>
+        )}
       </form>
     </AuthShell>
   );

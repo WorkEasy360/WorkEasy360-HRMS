@@ -1,4 +1,6 @@
-# WorkEasy360 API — production image
+# WorkEasy360 HRMS API — production image.
+# Migrations are NOT run here: they are a separate one-off release step
+# (deploy/docker-compose.prod.yml → service "migrate", `prisma migrate deploy`).
 FROM node:20-bookworm-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
@@ -18,9 +20,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY prisma ./prisma
 RUN npx prisma generate
 COPY --from=build /app/dist ./dist
-COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
 USER node
 EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-ENTRYPOINT ["./docker-entrypoint.sh"]
+# Healthy only when the database answers (the endpoint returns 503 otherwise).
+HEALTHCHECK --interval=30s --timeout=8s --start-period=40s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "dist/index.js"]

@@ -1,0 +1,123 @@
+# WorkEasy360 HRMS — production stack for a single EC2 host.
+#
+#   cd ~/hrms/deploy
+#   cp .env.example .env && chmod 600 .env && $EDITOR .env    # see README.md
+#   bash scripts/deploy.sh                                     # pull, migrate, up
+#
+# Only nginx publishes ports (80/443). Postgres is the shared Aurora cluster
+# (DATABASE_URL, schema `hrms`, role `hrms_app`); email is SES via the EC2 instance role.
+# There is no Redis: the app keeps no queues or cache outside the process.
+#
+# Compose reads deploy/.env for ${...} substitution in this file (it sits next to it)
+# and the api/migrate services load the same file as their environment.
+
+name: hrms-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# required: false only so `config` can be validated without a .env;
+# deploy.sh refuses to run without .env, and ${DOMAIN:?} fails without it anyway.
+x-app-env-file: &app-env-file
+  - path: .env
+    required: false
+
+services:
+  # One-off release step, never started by `up`:
+  #   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+  # Runs `prisma migrate deploy` only. NEVER point `migrate dev`, `migrate reset` or
+  # `db push` at the shared Aurora database.
+  migrate:
+    image: ${IMAGE_PREFIX:-hrms}-api:${IMAGE_TAG:-latest}
+    profiles: ["migrate"]
+    env_file: *app-env-file
+    environment:
+      NODE_ENV: production
+    command: ["npx", "--no-install", "prisma", "migrate", "deploy"]
+    restart: "no"
+    logging: *logging
+
+  api:
+    image: ${IMAGE_PREFIX:-hrms}-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: *app-env-file
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      # nginx is exactly one hop in front of the API.
+      TRUST_PROXY: "1"
+      CORS_ORIGIN: https://${DOMAIN:?set DOMAIN in deploy/.env}
+      APP_URL: https://${DOMAIN}
+      # "Today" for attendance and dates in emails follow the organization's timezone.
+      TZ: ${APP_TIMEZONE:-Asia/Kolkata}
+    expose: ["4000"]
+    # Readiness: /api/health returns 503 when the database is unreachable.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 8s
+      start_period: 40s
+      retries: 3
+    logging: *logging
+
+  web:
+    image: ${IMAGE_PREFIX:-hrms}-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # Deliberately no env_file: the web server needs none of the backend secrets.
+    # NEXT_PUBLIC_API_URL (https://DOMAIN/api) is baked into the image at build time.
+    environment:
+      NODE_ENV: production
+    expose: ["3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging: *logging
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      # The official image renders /etc/nginx/templates/*.template into conf.d with
+      # envsubst (only ${DOMAIN}; nginx's own $variables are left alone).
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - certbot-conf:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    depends_on: [api, web]
+    # Reload every 6h so renewed certificates are picked up without a restart.
+    command:
+      - /bin/sh
+      - -c
+      - 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g "daemon off;"'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+  # Renews certificates twice a day (a no-op until one is within 30 days of expiry).
+  # First issuance is scripts/init-letsencrypt.sh.
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+    logging: *logging
+
+volumes:
+  certbot-conf:
+  certbot-www:
