@@ -191,13 +191,11 @@ router.post("/login", async (req, res) => {
   }
   const { organizationSlug, email, password } = parsed.data;
 
-  const organization = await prisma.organization.findUnique({ where: { slug: organizationSlug } });
-  const user = organization
-    ? await prisma.user.findUnique({
-        where: { organizationId_email: { organizationId: organization.id, email } },
-        include: { employee: { select: { status: true } } },
-      })
-    : null;
+  // One lookup by organization slug + email (the pair is unique) instead of two sequential ones.
+  const user = await prisma.user.findFirst({
+    where: { email, organization: { slug: organizationSlug } },
+    include: { employee: { select: { status: true } } },
+  });
 
   // Always run bcrypt so unknown accounts take as long as wrong passwords.
   const passwordOk = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
@@ -214,7 +212,7 @@ router.post("/login", async (req, res) => {
     return res.json({ mfaRequired: true, mfaToken: signMfaToken(user.id) });
   }
 
-  await clearFailedAttempts(user.id);
+  if (user.failedLoginCount || user.lockedUntil) await clearFailedAttempts(user.id);
   return res.json(await issueSession(user.id));
 });
 
@@ -425,7 +423,7 @@ router.post("/2fa/login-verify", async (req, res) => {
     return res.status(401).json({ error: BAD_CODE });
   }
 
-  await clearFailedAttempts(user.id);
+  if (user.failedLoginCount || user.lockedUntil) await clearFailedAttempts(user.id);
   return res.json(await issueSession(user.id));
 });
 
