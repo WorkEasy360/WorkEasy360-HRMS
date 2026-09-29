@@ -5,6 +5,8 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../middleware/requirePermission";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
+import { assertCanDecide } from "../../utils/tenant";
+import { notifyExpenseSubmitted, notifyExpenseDecided } from "../../utils/notifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -43,10 +45,10 @@ router.get("/", requirePermission(PERMISSIONS.EXPENSE_MANAGE), async (req, res) 
 });
 
 const createSchema = z.object({
-  category: z.string().min(1),
-  amount: z.number().positive(),
+  category: z.string().trim().min(1).max(200),
+  amount: z.number().finite().positive().max(1_000_000),
   expenseDate: z.coerce.date(),
-  description: z.string().optional(),
+  description: z.string().trim().max(5000).optional(),
 });
 
 router.post("/", async (req, res) => {
@@ -59,10 +61,11 @@ router.post("/", async (req, res) => {
   const claim = await prisma.expenseClaim.create({
     data: { organizationId: req.user!.organizationId, employeeId, ...parsed.data },
   });
+  void notifyExpenseSubmitted(claim.id);
   return res.status(201).json(claim);
 });
 
-const decisionSchema = z.object({ decisionNote: z.string().optional() });
+const decisionSchema = z.object({ decisionNote: z.string().trim().max(5000).optional() });
 
 async function decide(req: Request, res: Response, approve: boolean) {
   const parsed = decisionSchema.safeParse(req.body ?? {});
@@ -75,21 +78,27 @@ async function decide(req: Request, res: Response, approve: boolean) {
   if (!claim) return res.status(404).json({ error: "Expense claim not found" });
   if (claim.status !== "PENDING") return res.status(409).json({ error: "Claim has already been decided" });
 
-  const canManageAll = req.user!.permissions.includes(PERMISSIONS.EXPENSE_MANAGE);
-  const isDirectManager = claim.employee.managerId === req.user!.employeeId;
-  if (!canManageAll && !isDirectManager) {
-    return res.status(403).json({ error: "Not authorized to decide this claim" });
-  }
+  await assertCanDecide(
+    req,
+    { employeeId: claim.employeeId, managerId: claim.employee.managerId },
+    PERMISSIONS.EXPENSE_MANAGE,
+    "Not authorized to decide this claim",
+  );
 
-  const updated = await prisma.expenseClaim.update({
-    where: { id: claim.id },
-    data: {
-      status: approve ? "APPROVED" : "REJECTED",
-      approverId: req.user!.employeeId,
-      decisionNote: parsed.data.decisionNote,
-      decidedAt: new Date(),
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.expenseClaim.updateMany({
+      where: { id: claim.id, organizationId: req.user!.organizationId, status: "PENDING" },
+      data: {
+        status: approve ? "APPROVED" : "REJECTED",
+        approverId: req.user!.employeeId,
+        decisionNote: parsed.data.decisionNote,
+        decidedAt: new Date(),
+      },
+    });
+    if (!count) throw new HttpError(409, "Claim has already been decided");
+    return tx.expenseClaim.findUniqueOrThrow({ where: { id: claim.id } });
   });
+  void notifyExpenseDecided(updated.id);
   return res.json(updated);
 }
 
@@ -103,7 +112,15 @@ router.post("/:id/mark-reimbursed", requirePermission(PERMISSIONS.EXPENSE_MANAGE
   if (!claim) return res.status(404).json({ error: "Expense claim not found" });
   if (claim.status !== "APPROVED") return res.status(409).json({ error: "Only approved claims can be marked reimbursed" });
 
-  const updated = await prisma.expenseClaim.update({ where: { id: claim.id }, data: { status: "REIMBURSED" } });
+  const updated = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.expenseClaim.updateMany({
+      where: { id: claim.id, organizationId: req.user!.organizationId, status: "APPROVED" },
+      data: { status: "REIMBURSED" },
+    });
+    if (!count) throw new HttpError(409, "Only approved claims can be marked reimbursed");
+    return tx.expenseClaim.findUniqueOrThrow({ where: { id: claim.id } });
+  });
+  void notifyExpenseDecided(updated.id);
   return res.json(updated);
 });
 

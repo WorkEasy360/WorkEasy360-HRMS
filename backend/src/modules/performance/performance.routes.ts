@@ -4,6 +4,7 @@ import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../middleware/requirePermission";
 import { PERMISSIONS } from "../../utils/permissions";
+import { isActiveEmployee } from "../../utils/tenant";
 
 const router = Router();
 router.use(requireAuth);
@@ -16,11 +17,13 @@ router.get("/cycles", async (req, res) => {
   return res.json(cycles);
 });
 
-const createCycleSchema = z.object({
-  name: z.string().min(1),
-  startDate: z.coerce.date(),
-  endDate: z.coerce.date(),
-});
+const createCycleSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+  })
+  .refine((d) => d.endDate >= d.startDate, { message: "endDate must be on or after startDate", path: ["endDate"] });
 
 // Creating a cycle immediately opens a review for every active employee,
 // assigning their current manager as reviewer (self-assessment only if none).
@@ -73,7 +76,7 @@ router.get("/reviews/team", async (req, res) => {
   return res.json(reviews);
 });
 
-const selfSchema = z.object({ selfAssessment: z.string().min(1) });
+const selfSchema = z.object({ selfAssessment: z.string().trim().min(1).max(5000) });
 
 router.patch("/reviews/me/:id", async (req, res) => {
   const parsed = selfSchema.safeParse(req.body);
@@ -95,7 +98,7 @@ router.patch("/reviews/me/:id", async (req, res) => {
   return res.json(updated);
 });
 
-const managerSchema = z.object({ managerAssessment: z.string().min(1), rating: z.number().int().min(1).max(5) });
+const managerSchema = z.object({ managerAssessment: z.string().trim().min(1).max(5000), rating: z.number().int().min(1).max(5) });
 
 router.patch("/reviews/:id/manager", async (req, res) => {
   const parsed = managerSchema.safeParse(req.body);
@@ -107,8 +110,15 @@ router.patch("/reviews/:id/manager", async (req, res) => {
   if (!review) return res.status(404).json({ error: "Review not found" });
   if (review.status === "COMPLETED") return res.status(409).json({ error: "Review already completed" });
 
+  if (req.user!.employeeId && review.employeeId === req.user!.employeeId) {
+    return res.status(403).json({ error: "You can't rate your own review" });
+  }
+
   const canManageAll = req.user!.permissions.includes(PERMISSIONS.PERFORMANCE_MANAGE);
-  const isReviewer = review.reviewerId === req.user!.employeeId;
+  const isReviewer =
+    !!req.user!.employeeId &&
+    review.reviewerId === req.user!.employeeId &&
+    (await isActiveEmployee(req.user!.employeeId, req.user!.organizationId));
   if (!canManageAll && !isReviewer) {
     return res.status(403).json({ error: "Not authorized to review this employee" });
   }

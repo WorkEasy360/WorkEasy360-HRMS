@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { FeedbackProvider } from "@/components/feedback";
 import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
@@ -14,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WorkEasy360 HRMS",
-  description: "WorkEasy360 HRMS",
+  title: { default: "WorkEasy360 HRMS", template: "%s · WorkEasy360" },
+  description: "Attendance, leave, payroll and people management for your organization.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -25,7 +26,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <FeedbackProvider>{children}</FeedbackProvider>
+        </AuthProvider>
       </body>
     </html>
   );

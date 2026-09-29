@@ -24,9 +24,9 @@ router.get("/", requirePermission(PERMISSIONS.ASSET_MANAGE), async (req, res) =>
 });
 
 const createSchema = z.object({
-  name: z.string().min(1),
-  category: z.string().min(1),
-  serialNumber: z.string().optional(),
+  name: z.string().trim().min(1).max(200),
+  category: z.string().trim().min(1).max(200),
+  serialNumber: z.string().trim().max(200).optional(),
 });
 
 router.post("/", requirePermission(PERMISSIONS.ASSET_MANAGE), async (req, res) => {
@@ -52,11 +52,14 @@ router.post("/:id/assign", requirePermission(PERMISSIONS.ASSET_MANAGE), async (r
   ]);
   if (!asset || !employee) return res.status(404).json({ error: "Asset or employee not found" });
   if (asset.status === "ASSIGNED") return res.status(409).json({ error: "Asset is already assigned" });
+  if (asset.status !== "AVAILABLE") return res.status(409).json({ error: "Only available assets can be assigned" });
 
-  const updated = await prisma.asset.update({
-    where: { id: asset.id },
+  const { count } = await prisma.asset.updateMany({
+    where: { id: asset.id, organizationId, status: "AVAILABLE" },
     data: { assignedToId: employee.id, assignedAt: new Date(), status: "ASSIGNED" },
   });
+  if (!count) return res.status(409).json({ error: "Asset is already assigned" });
+  const updated = await prisma.asset.findUniqueOrThrow({ where: { id: asset.id } });
   return res.json(updated);
 });
 
@@ -65,11 +68,14 @@ router.post("/:id/return", requirePermission(PERMISSIONS.ASSET_MANAGE), async (r
     where: { id: req.params.id, organizationId: req.user!.organizationId },
   });
   if (!asset) return res.status(404).json({ error: "Asset not found" });
+  if (asset.status !== "ASSIGNED") return res.status(409).json({ error: "Only assigned assets can be returned" });
 
-  const updated = await prisma.asset.update({
-    where: { id: asset.id },
+  const { count } = await prisma.asset.updateMany({
+    where: { id: asset.id, organizationId: req.user!.organizationId, status: "ASSIGNED" },
     data: { assignedToId: null, assignedAt: null, status: "AVAILABLE" },
   });
+  if (!count) return res.status(409).json({ error: "Only assigned assets can be returned" });
+  const updated = await prisma.asset.findUniqueOrThrow({ where: { id: asset.id } });
   return res.json(updated);
 });
 

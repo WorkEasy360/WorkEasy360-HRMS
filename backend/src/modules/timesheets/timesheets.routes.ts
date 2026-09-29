@@ -6,6 +6,8 @@ import { requirePermission } from "../../middleware/requirePermission";
 import { runAutomations } from "../../utils/automations";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
+import { latestCurrentDate, monthRange, startOfUtcDay } from "../../utils/date";
+import { assertCanDecide } from "../../utils/tenant";
 
 const router = Router();
 router.use(requireAuth);
@@ -58,9 +60,12 @@ router.get("/", requirePermission(PERMISSIONS.EMPLOYEE_READ), async (req, res) =
 });
 
 const upsertSchema = z.object({
-  date: z.coerce.date(),
-  hours: z.number().positive().max(24),
-  task: z.string().optional(),
+  date: z.coerce
+    .date()
+    .transform(startOfUtcDay)
+    .refine((d) => d.getTime() <= latestCurrentDate().getTime(), { message: "Timesheet date can't be in the future" }),
+  hours: z.number().finite().positive().max(24),
+  task: z.string().trim().max(5000).optional(),
 });
 
 router.post("/", async (req, res) => {
@@ -86,7 +91,8 @@ router.post("/", async (req, res) => {
 const decisionSchema = z.object({});
 
 async function decide(req: Request, res: Response, approve: boolean) {
-  decisionSchema.parse(req.body ?? {});
+  const parsed = decisionSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const entry = await prisma.timesheetEntry.findFirst({
     where: { id: req.params.id, organizationId: req.user!.organizationId },
@@ -97,15 +103,20 @@ async function decide(req: Request, res: Response, approve: boolean) {
     return res.status(409).json({ error: "Entry has already been decided" });
   }
 
-  const canManageAll = req.user!.permissions.includes(PERMISSIONS.TIMESHEET_MANAGE);
-  const isDirectManager = entry.employee.managerId === req.user!.employeeId;
-  if (!canManageAll && !isDirectManager) {
-    return res.status(403).json({ error: "Not authorized to decide this entry" });
-  }
+  await assertCanDecide(
+    req,
+    { employeeId: entry.employeeId, managerId: entry.employee.managerId },
+    PERMISSIONS.TIMESHEET_MANAGE,
+    "Not authorized to decide this entry",
+  );
 
-  const updated = await prisma.timesheetEntry.update({
-    where: { id: entry.id },
-    data: { status: approve ? "APPROVED" : "REJECTED", approverId: req.user!.employeeId, decidedAt: new Date() },
+  const updated = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.timesheetEntry.updateMany({
+      where: { id: entry.id, organizationId: req.user!.organizationId, status: "PENDING" },
+      data: { status: approve ? "APPROVED" : "REJECTED", approverId: req.user!.employeeId, decidedAt: new Date() },
+    });
+    if (!count) throw new HttpError(409, "Entry has already been decided");
+    return tx.timesheetEntry.findUniqueOrThrow({ where: { id: entry.id } });
   });
 
   if (approve) {
@@ -117,12 +128,5 @@ async function decide(req: Request, res: Response, approve: boolean) {
 
 router.post("/:id/approve", (req, res) => decide(req, res, true));
 router.post("/:id/reject", (req, res) => decide(req, res, false));
-
-function monthRange(month: string) {
-  const [year, m] = month.split("-").map(Number);
-  const start = new Date(year, m - 1, 1);
-  const end = new Date(year, m, 1);
-  return { date: { gte: start, lt: end } };
-}
 
 export default router;

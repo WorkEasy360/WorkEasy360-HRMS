@@ -1,20 +1,29 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { ClockPlus, FileClock } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { TimesheetEntry } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { errorMessage, useFeedback } from "@/components/feedback";
+import { formatDate } from "@/components/format";
 
 export default function MyTimesheetPage() {
+  const { toast } = useFeedback();
   const [entries, setEntries] = useState<TimesheetEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await apiFetch<TimesheetEntry[]>("/timesheets/me");
       setEntries(data);
+    } catch (err) {
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -25,63 +34,103 @@ export default function MyTimesheetPage() {
     load();
   }, []);
 
+  const pending = entries.filter((e) => e.status === "PENDING");
+  const approvedHours = entries.filter((e) => e.status === "APPROVED").reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+  const totalHours = entries.reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">My Timesheet</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          {showForm ? "Cancel" : "Log hours"}
-        </button>
-      </div>
+      <PageHeader
+        title="My Timesheet"
+        description="Log the hours you work each day and track their approval."
+        actions={
+          <Button
+            variant={showForm ? "secondary" : "primary"}
+            icon={showForm ? undefined : ClockPlus}
+            onClick={() => setShowForm((v) => !v)}
+          >
+            {showForm ? "Close form" : "Log hours"}
+          </Button>
+        }
+      />
+
+      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
       {showForm && (
         <TimesheetForm
           onSaved={() => {
             setShowForm(false);
+            toast.success("Hours logged");
             load();
           }}
         />
       )}
 
+      {!loading && entries.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <SummaryTile label="Pending" value={pending.length} tone="text-amber-600" />
+          <SummaryTile label="Hours approved" value={round(approvedHours)} tone="text-emerald-600" />
+          <SummaryTile label="Hours logged" value={round(totalHours)} tone="text-slate-900" />
+        </div>
+      )}
+
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <LoadingRows rows={4} />
+      ) : entries.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={FileClock}
+            title="No timesheet entries yet"
+            description="Log the hours you spent working and your manager will review them."
+            action={
+              !showForm && (
+                <Button icon={ClockPlus} onClick={() => setShowForm(true)}>
+                  Log hours
+                </Button>
+              )
+            }
+          />
+        </Card>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <th className="px-4 py-2 font-medium">Date</th>
-                <th className="px-4 py-2 font-medium">Hours</th>
-                <th className="px-4 py-2 font-medium">Task</th>
-                <th className="px-4 py-2 font-medium">Status</th>
+                <th>Date</th>
+                <th>Hours</th>
+                <th>Task</th>
+                <th>Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {entries.map((e) => (
                 <tr key={e.id}>
-                  <td className="px-4 py-2">{new Date(e.date).toLocaleDateString()}</td>
-                  <td className="px-4 py-2 text-slate-500">{e.hours}</td>
-                  <td className="px-4 py-2 text-slate-500">{e.task ?? "—"}</td>
-                  <td className="px-4 py-2">
+                  <td className="whitespace-nowrap font-medium text-slate-900">{formatDate(e.date)}</td>
+                  <td className="text-slate-500">{e.hours}</td>
+                  <td className="text-slate-500">{e.task ?? "—"}</td>
+                  <td>
                     <StatusBadge status={e.status} />
                   </td>
                 </tr>
               ))}
-              {entries.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                    No timesheet entries yet.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+function round(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
+function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <Card className="px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
+    </Card>
   );
 }
 
@@ -110,27 +159,43 @@ function TimesheetForm({ onSaved }: { onSaved: () => void }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-3">
-      <label className="text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Date</span>
-        <input required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      </label>
-      <label className="text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Hours</span>
-        <input required type="number" min="0.5" max="24" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      </label>
-      <label className="text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Task (optional)</span>
-        <input value={task} onChange={(e) => setTask(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      </label>
-      {error && <p className="col-span-3 text-sm text-red-600">{error}</p>}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="col-span-3 w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-      >
-        {submitting ? "Saving…" : "Save"}
-      </button>
-    </form>
+    <Card className="p-4">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="ts-date" className="label">
+            Date
+          </label>
+          <input id="ts-date" required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input" />
+        </div>
+        <div>
+          <label htmlFor="ts-hours" className="label">
+            Hours
+          </label>
+          <input
+            id="ts-hours"
+            required
+            type="number"
+            min="0.5"
+            max="24"
+            step="0.5"
+            value={hours}
+            onChange={(e) => setHours(e.target.value)}
+            className="input"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label htmlFor="ts-task" className="label">
+            Task <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input id="ts-task" value={task} onChange={(e) => setTask(e.target.value)} className="input" placeholder="What did you work on?" />
+        </div>
+        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        <div className="sm:col-span-2">
+          <Button type="submit" loading={submitting}>
+            Save entry
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

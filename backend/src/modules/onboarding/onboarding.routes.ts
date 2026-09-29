@@ -49,7 +49,7 @@ router.get("/", requirePermission(PERMISSIONS.ONBOARDING_MANAGE), async (req, re
 
 const createSchema = z.object({
   employeeId: z.string().uuid(),
-  title: z.string().min(1),
+  title: z.string().trim().min(1).max(200),
   dueDate: z.coerce.date().optional(),
 });
 

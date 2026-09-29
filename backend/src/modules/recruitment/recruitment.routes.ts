@@ -6,6 +6,8 @@ import { requirePermission } from "../../middleware/requirePermission";
 import { createEmployeeWithUser } from "../../utils/createEmployee";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
+import { assertInOrg } from "../../utils/tenant";
+import { notifyInterviewScheduled } from "../../utils/notifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -22,8 +24,8 @@ router.get("/postings", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE), async
 });
 
 const createPostingSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().min(1),
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().min(1).max(5000),
   departmentId: z.string().uuid().optional(),
 });
 
@@ -33,6 +35,7 @@ router.post("/postings", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE), asyn
 
   const parsed = createPostingSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  await assertInOrg("department", parsed.data.departmentId, req.user!.organizationId, "Department");
 
   const posting = await prisma.jobPosting.create({
     data: { organizationId: req.user!.organizationId, postedById: employeeId, ...parsed.data },
@@ -69,11 +72,11 @@ router.get("/candidates", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE), asy
 
 const createCandidateSchema = z.object({
   jobPostingId: z.string().uuid(),
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  email: z.string().email(),
-  phone: z.string().optional(),
-  source: z.string().optional(),
+  firstName: z.string().trim().min(1).max(200),
+  lastName: z.string().trim().min(1).max(200),
+  email: z.string().trim().email().max(254),
+  phone: z.string().trim().max(50).optional(),
+  source: z.string().trim().max(200).optional(),
 });
 
 router.post("/candidates", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE), async (req, res) => {
@@ -89,8 +92,9 @@ router.post("/candidates", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE), as
 });
 
 const updateCandidateSchema = z.object({
-  stage: z.enum(["APPLIED", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"]).optional(),
-  notes: z.string().optional(),
+  // HIRED is intentionally absent: hiring must go through POST /candidates/:id/hire.
+  stage: z.enum(["APPLIED", "SCREENING", "INTERVIEW", "OFFER", "REJECTED"]).optional(),
+  notes: z.string().trim().max(5000).optional(),
 });
 
 router.patch("/candidates/:id", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE), async (req, res) => {
@@ -108,7 +112,7 @@ router.patch("/candidates/:id", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE
 });
 
 const hireSchema = z.object({
-  designation: z.string().optional(),
+  designation: z.string().trim().max(200).optional(),
   departmentId: z.string().uuid().optional(),
   managerId: z.string().uuid().optional(),
   dateOfJoining: z.coerce.date().optional(),
@@ -125,7 +129,7 @@ router.post("/candidates/:id/hire", requirePermission(PERMISSIONS.RECRUITMENT_MA
   if (!candidate) return res.status(404).json({ error: "Candidate not found" });
   if (candidate.stage === "HIRED") return res.status(409).json({ error: "Candidate has already been hired" });
 
-  const { employee, tempPassword } = await createEmployeeWithUser(organizationId, {
+  const { employee, tempPassword, inviteSent } = await createEmployeeWithUser(organizationId, {
     email: candidate.email,
     firstName: candidate.firstName,
     lastName: candidate.lastName,
@@ -137,7 +141,7 @@ router.post("/candidates/:id/hire", requirePermission(PERMISSIONS.RECRUITMENT_MA
     data: { stage: "HIRED", hiredEmployeeId: employee.id },
   });
 
-  return res.status(201).json({ candidate: updatedCandidate, employee, tempPassword });
+  return res.status(201).json({ candidate: updatedCandidate, employee, tempPassword, inviteSent });
 });
 
 // --- Interviews ---
@@ -173,10 +177,11 @@ router.post("/candidates/:id/interviews", requirePermission(PERMISSIONS.RECRUITM
   const interview = await prisma.interview.create({
     data: { organizationId, candidateId: candidate.id, ...parsed.data },
   });
+  void notifyInterviewScheduled(interview.id);
   return res.status(201).json(interview);
 });
 
-const feedbackSchema = z.object({ feedback: z.string().min(1), rating: z.number().int().min(1).max(5) });
+const feedbackSchema = z.object({ feedback: z.string().trim().min(1).max(5000), rating: z.number().int().min(1).max(5) });
 
 router.patch("/interviews/:id", async (req, res) => {
   const parsed = feedbackSchema.safeParse(req.body);

@@ -16,7 +16,7 @@ router.get("/current", async (req, res) => {
   return res.json(organization);
 });
 
-const updateSchema = z.object({ name: z.string().min(2) });
+const updateSchema = z.object({ name: z.string().trim().min(2).max(200) });
 
 router.patch("/current", requirePermission(PERMISSIONS.ORG_MANAGE), async (req, res) => {
   const parsed = updateSchema.safeParse(req.body);

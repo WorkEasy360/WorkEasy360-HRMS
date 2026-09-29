@@ -1,18 +1,26 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { CalendarPlus, CalendarX2 } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { LeaveRequest, LeaveType } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { errorMessage, useFeedback } from "@/components/feedback";
+import { formatDateRange } from "@/components/format";
 
 export default function MyLeavePage() {
+  const { toast, confirm } = useFeedback();
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       const [reqs, types] = await Promise.all([
         apiFetch<LeaveRequest[]>("/leave-requests/me"),
@@ -20,6 +28,8 @@ export default function MyLeavePage() {
       ]);
       setRequests(reqs);
       setLeaveTypes(types);
+    } catch (err) {
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -30,79 +40,136 @@ export default function MyLeavePage() {
     load();
   }, []);
 
-  async function cancel(id: string) {
-    await apiFetch(`/leave-requests/${id}/cancel`, { method: "POST" });
-    load();
+  async function cancel(r: LeaveRequest) {
+    const ok = await confirm({
+      title: "Cancel this leave request?",
+      description: `${r.leaveType.name}, ${formatDateRange(r.startDate, r.endDate)}. You can submit a new request later if needed.`,
+      confirmLabel: "Cancel request",
+      destructive: true,
+    });
+    if (!ok) return;
+    setCancellingId(r.id);
+    try {
+      await apiFetch(`/leave-requests/${r.id}/cancel`, { method: "POST" });
+      toast.success("Leave request cancelled");
+      load();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setCancellingId(null);
+    }
   }
+
+  const pending = requests.filter((r) => r.status === "PENDING");
+  const approved = requests.filter((r) => r.status === "APPROVED");
+  const approvedDays = approved.reduce((sum, r) => sum + (Number(r.days) || 0), 0);
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">My Leave</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          {showForm ? "Cancel" : "Request leave"}
-        </button>
-      </div>
+      <PageHeader
+        title="My Leave"
+        description="Request time off and track the status of your leave requests."
+        actions={
+          <Button
+            variant={showForm ? "secondary" : "primary"}
+            icon={showForm ? undefined : CalendarPlus}
+            onClick={() => setShowForm((v) => !v)}
+          >
+            {showForm ? "Close form" : "Request leave"}
+          </Button>
+        }
+      />
+
+      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
       {showForm && (
         <LeaveRequestForm
           leaveTypes={leaveTypes}
           onCreated={() => {
             setShowForm(false);
+            toast.success("Leave request submitted");
             load();
           }}
         />
       )}
 
+      {!loading && requests.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <SummaryTile label="Pending" value={pending.length} tone="text-amber-600" />
+          <SummaryTile label="Approved" value={approved.length} tone="text-emerald-600" />
+          <SummaryTile label="Days approved" value={approvedDays} tone="text-slate-900" />
+        </div>
+      )}
+
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <LoadingRows rows={4} />
+      ) : requests.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={CalendarX2}
+            title="No leave requests yet"
+            description="When you need time off, submit a request and your manager will be notified to approve it."
+            action={
+              !showForm && (
+                <Button icon={CalendarPlus} onClick={() => setShowForm(true)}>
+                  Request leave
+                </Button>
+              )
+            }
+          />
+        </Card>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <th className="px-4 py-2 font-medium">Type</th>
-                <th className="px-4 py-2 font-medium">Dates</th>
-                <th className="px-4 py-2 font-medium">Days</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium"></th>
+                <th>Type</th>
+                <th>Dates</th>
+                <th>Days</th>
+                <th>Status</th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {requests.map((r) => (
                 <tr key={r.id}>
-                  <td className="px-4 py-2">{r.leaveType.name}</td>
-                  <td className="px-4 py-2 text-slate-500">
-                    {new Date(r.startDate).toLocaleDateString()} – {new Date(r.endDate).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-2 text-slate-500">{r.days}</td>
-                  <td className="px-4 py-2">
+                  <td className="font-medium text-slate-900">{r.leaveType.name}</td>
+                  <td className="whitespace-nowrap text-slate-500">{formatDateRange(r.startDate, r.endDate)}</td>
+                  <td className="text-slate-500">{r.days}</td>
+                  <td>
                     <StatusBadge status={r.status} />
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="text-right">
                     {r.status === "PENDING" && (
-                      <button onClick={() => cancel(r.id)} className="text-xs font-medium text-red-600 hover:underline">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                        loading={cancellingId === r.id}
+                        onClick={() => cancel(r)}
+                      >
                         Cancel
-                      </button>
+                      </Button>
                     )}
                   </td>
                 </tr>
               ))}
-              {requests.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                    No leave requests yet.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <Card className="px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
+    </Card>
   );
 }
 
@@ -132,43 +199,54 @@ function LeaveRequestForm({ leaveTypes, onCreated }: { leaveTypes: LeaveType[]; 
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
-      <label className="text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Leave type</span>
-        <select
-          required
-          value={leaveTypeId}
-          onChange={(e) => setLeaveTypeId(e.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-        >
-          {leaveTypes.map((lt) => (
-            <option key={lt.id} value={lt.id}>
-              {lt.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div />
-      <label className="text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Start date</span>
-        <input required type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      </label>
-      <label className="text-sm">
-        <span className="mb-1 block font-medium text-slate-700">End date</span>
-        <input required type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      </label>
-      <label className="col-span-2 text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Reason (optional)</span>
-        <input value={reason} onChange={(e) => setReason(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      </label>
-      {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
-      <button
-        type="submit"
-        disabled={submitting || !leaveTypeId}
-        className="col-span-2 w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-      >
-        {submitting ? "Submitting…" : "Submit request"}
-      </button>
-    </form>
+    <Card className="p-4">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="leave-type" className="label">
+            Leave type
+          </label>
+          <select id="leave-type" required value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)} className="input">
+            {leaveTypes.map((lt) => (
+              <option key={lt.id} value={lt.id}>
+                {lt.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="hidden sm:block" />
+        <div>
+          <label htmlFor="leave-start" className="label">
+            Start date
+          </label>
+          <input id="leave-start" required type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
+        </div>
+        <div>
+          <label htmlFor="leave-end" className="label">
+            End date
+          </label>
+          <input
+            id="leave-end"
+            required
+            type="date"
+            min={startDate || undefined}
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="input"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label htmlFor="leave-reason" className="label">
+            Reason <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input id="leave-reason" value={reason} onChange={(e) => setReason(e.target.value)} className="input" />
+        </div>
+        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        <div className="sm:col-span-2">
+          <Button type="submit" loading={submitting} disabled={!leaveTypeId}>
+            Submit request
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

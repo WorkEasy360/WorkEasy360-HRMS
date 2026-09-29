@@ -32,8 +32,8 @@ router.get("/:employeeId", requirePermission(PERMISSIONS.COMPENSATION_MANAGE), a
 const createSchema = z.object({
   employeeId: z.string().uuid(),
   effectiveFrom: z.coerce.date(),
-  annualCTC: z.number().positive(),
-  currency: z.string().min(1).default("INR"),
+  annualCTC: z.number().finite().positive().max(1_000_000_000),
+  currency: z.string().trim().min(1).max(10).default("INR"),
 });
 
 router.post("/", requirePermission(PERMISSIONS.COMPENSATION_MANAGE), async (req, res) => {

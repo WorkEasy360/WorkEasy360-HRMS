@@ -4,6 +4,7 @@ import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../middleware/requirePermission";
 import { PERMISSIONS } from "../../utils/permissions";
+import { assertInOrg } from "../../utils/tenant";
 
 const router = Router();
 router.use(requireAuth);
@@ -17,7 +18,7 @@ router.get("/", requirePermission(PERMISSIONS.DEPARTMENT_READ), async (req, res)
 });
 
 const createSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1).max(200),
   parentId: z.string().uuid().optional(),
 });
 
@@ -26,6 +27,7 @@ router.post("/", requirePermission(PERMISSIONS.DEPARTMENT_MANAGE), async (req, r
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  await assertInOrg("department", parsed.data.parentId, req.user!.organizationId, "Parent department");
 
   const department = await prisma.department.create({
     data: { organizationId: req.user!.organizationId, ...parsed.data },

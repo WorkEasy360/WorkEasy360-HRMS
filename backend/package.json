@@ -5,17 +5,19 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "migrate:deploy": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1142.0",
     "@prisma/client": "^5.20.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -26,6 +28,7 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "otplib": "^13.5.0",
+    "prisma": "^5.20.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -35,8 +38,10 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/morgan": "^1.9.9",
     "@types/node": "^20.16.10",
-    "prisma": "^5.20.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

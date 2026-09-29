@@ -3,7 +3,7 @@ import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../middleware/requirePermission";
 import { PERMISSIONS } from "../../utils/permissions";
-import { today } from "../../utils/date";
+import { monthRange, today } from "../../utils/date";
 import { HttpError } from "../../utils/HttpError";
 
 const router = Router();
@@ -83,12 +83,5 @@ router.get("/", requirePermission(PERMISSIONS.EMPLOYEE_READ), async (req, res) =
   });
   return res.json(records);
 });
-
-function monthRange(month: string) {
-  const [year, m] = month.split("-").map(Number);
-  const start = new Date(year, m - 1, 1);
-  const end = new Date(year, m, 1);
-  return { date: { gte: start, lt: end } };
-}
 
 export default router;

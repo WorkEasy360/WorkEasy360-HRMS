@@ -1,8 +1,11 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { ArrowRight, Plus, Workflow } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { AutomationRule } from "@/lib/types";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { errorMessage, useFeedback } from "@/components/feedback";
 
 const TRIGGER_LABELS: Record<AutomationRule["trigger"], string> = {
   LEAVE_APPROVED: "Leave approved",
@@ -16,14 +19,20 @@ const ACTION_LABELS: Record<AutomationRule["actionType"], string> = {
 };
 
 export default function AutomationPage() {
+  const { toast, confirm } = useFeedback();
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       setRules(await apiFetch<AutomationRule[]>("/automation-rules"));
+    } catch (err) {
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -36,62 +45,122 @@ export default function AutomationPage() {
 
   async function toggle(rule: AutomationRule) {
     setRules((prev) => prev.map((r) => (r.id === rule.id ? { ...r, enabled: !r.enabled } : r)));
-    await apiFetch(`/automation-rules/${rule.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !rule.enabled }) });
+    try {
+      await apiFetch(`/automation-rules/${rule.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !rule.enabled }) });
+      toast.success(`"${rule.name}" ${rule.enabled ? "paused" : "enabled"}`);
+    } catch (err) {
+      setRules((prev) => prev.map((r) => (r.id === rule.id ? { ...r, enabled: rule.enabled } : r)));
+      toast.error(errorMessage(err));
+    }
   }
 
-  async function remove(id: string) {
-    await apiFetch(`/automation-rules/${id}`, { method: "DELETE" });
-    load();
+  async function remove(rule: AutomationRule) {
+    const ok = await confirm({
+      title: `Delete "${rule.name}"?`,
+      description: "This rule will stop running immediately. This cannot be undone.",
+      confirmLabel: "Delete rule",
+      destructive: true,
+    });
+    if (!ok) return;
+    setDeletingId(rule.id);
+    try {
+      await apiFetch(`/automation-rules/${rule.id}`, { method: "DELETE" });
+      toast.success("Automation rule deleted");
+      load();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setDeletingId(null);
+    }
   }
+
+  const enabledCount = rules.filter((r) => r.enabled).length;
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Automation</h1>
-          <p className="mt-1 text-sm text-slate-500">Trigger an action automatically when something happens.</p>
-        </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          {showForm ? "Cancel" : "New rule"}
-        </button>
-      </div>
+      <PageHeader
+        title="Automation"
+        description="Trigger an action automatically when something happens."
+        actions={
+          <Button
+            variant={showForm ? "secondary" : "primary"}
+            icon={showForm ? undefined : Plus}
+            onClick={() => setShowForm((v) => !v)}
+          >
+            {showForm ? "Close form" : "New rule"}
+          </Button>
+        }
+      />
+
+      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
       {showForm && (
         <RuleForm
           onCreated={() => {
             setShowForm(false);
+            toast.success("Automation rule created");
             load();
           }}
         />
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <LoadingRows rows={3} />
       ) : rules.length === 0 ? (
-        <p className="text-sm text-slate-500">No automation rules yet.</p>
+        <Card>
+          <EmptyState
+            icon={Workflow}
+            title="No automation rules yet"
+            description="Create a rule to post announcements or assign onboarding tasks automatically when events happen."
+            action={
+              !showForm && (
+                <Button icon={Plus} onClick={() => setShowForm(true)}>
+                  New rule
+                </Button>
+              )
+            }
+          />
+        </Card>
       ) : (
         <div className="space-y-3">
+          <p className="text-sm text-slate-500">
+            {enabledCount} of {rules.length} {rules.length === 1 ? "rule" : "rules"} enabled
+          </p>
           {rules.map((r) => (
-            <div key={r.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <div>
-                <p className="font-medium">{r.name}</p>
-                <p className="text-sm text-slate-500">
-                  When <strong>{TRIGGER_LABELS[r.trigger]}</strong> → <strong>{ACTION_LABELS[r.actionType]}</strong>
-                </p>
+            <Card key={r.id} className="p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className={`font-medium ${r.enabled ? "text-slate-900" : "text-slate-500"}`}>{r.name}</p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
+                    <span>When</span>
+                    <strong className="font-medium text-slate-700">{TRIGGER_LABELS[r.trigger]}</strong>
+                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                    <strong className="font-medium text-slate-700">{ACTION_LABELS[r.actionType]}</strong>
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <label htmlFor={`rule-enabled-${r.id}`} className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
+                    <input
+                      id={`rule-enabled-${r.id}`}
+                      type="checkbox"
+                      checked={r.enabled}
+                      onChange={() => toggle(r)}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    Enabled
+                  </label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    loading={deletingId === r.id}
+                    onClick={() => remove(r)}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="h-4 w-4 rounded border-slate-300" />
-                  Enabled
-                </label>
-                <button onClick={() => remove(r.id)} className="text-xs font-medium text-red-600 hover:underline">
-                  Delete
-                </button>
-              </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -127,43 +196,101 @@ function RuleForm({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
-      <input required placeholder="Rule name" value={name} onChange={(e) => setName(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:col-span-2" />
-      <label className="text-sm">
-        <span className="mb-1 block font-medium text-slate-700">When</span>
-        <select value={trigger} onChange={(e) => setTrigger(e.target.value as AutomationRule["trigger"])} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-          {Object.entries(TRIGGER_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Then</span>
-        <select value={actionType} onChange={(e) => setActionType(e.target.value as AutomationRule["actionType"])} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-          {Object.entries(ACTION_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
+    <Card className="p-4">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label htmlFor="rule-name" className="label">
+            Rule name
+          </label>
+          <input
+            id="rule-name"
+            required
+            placeholder="e.g. Welcome new joiners"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="input"
+          />
+        </div>
+        <div>
+          <label htmlFor="rule-trigger" className="label">
+            When
+          </label>
+          <select
+            id="rule-trigger"
+            value={trigger}
+            onChange={(e) => setTrigger(e.target.value as AutomationRule["trigger"])}
+            className="input"
+          >
+            {Object.entries(TRIGGER_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="rule-action" className="label">
+            Then
+          </label>
+          <select
+            id="rule-action"
+            value={actionType}
+            onChange={(e) => setActionType(e.target.value as AutomationRule["actionType"])}
+            className="input"
+          >
+            {Object.entries(ACTION_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      {actionType === "ASSIGN_ONBOARDING_TASK" && (
-        <input required placeholder="Task title" value={title} onChange={(e) => setTitle(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:col-span-2" />
-      )}
-      {actionType === "CREATE_ANNOUNCEMENT" && (
-        <>
-          <input required placeholder="Announcement title" value={title} onChange={(e) => setTitle(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:col-span-2" />
-          <textarea required placeholder="Announcement body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:col-span-2" />
-        </>
-      )}
+        {actionType === "ASSIGN_ONBOARDING_TASK" && (
+          <div className="sm:col-span-2">
+            <label htmlFor="rule-task-title" className="label">
+              Task title
+            </label>
+            <input id="rule-task-title" required value={title} onChange={(e) => setTitle(e.target.value)} className="input" />
+          </div>
+        )}
+        {actionType === "CREATE_ANNOUNCEMENT" && (
+          <>
+            <div className="sm:col-span-2">
+              <label htmlFor="rule-announcement-title" className="label">
+                Announcement title
+              </label>
+              <input
+                id="rule-announcement-title"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="input"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="rule-announcement-body" className="label">
+                Announcement body
+              </label>
+              <textarea
+                id="rule-announcement-body"
+                required
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={3}
+                className="input"
+              />
+            </div>
+          </>
+        )}
 
-      {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
-      <button type="submit" disabled={submitting} className="col-span-2 w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-        {submitting ? "Creating…" : "Create rule"}
-      </button>
-    </form>
+        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        <div className="sm:col-span-2">
+          <Button type="submit" loading={submitting}>
+            Create rule
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

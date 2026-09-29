@@ -1,0 +1,47 @@
+# Single-server production stack (EC2): Caddy (HTTPS) → web + api. Database is Aurora/RDS.
+# Usage on the server:  cp .env.production.example .env  (fill it in)  →  docker compose up -d --build
+services:
+  api:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      TRUST_PROXY: "1"
+      RUN_MIGRATIONS: "true"
+      CORS_ORIGIN: https://${DOMAIN}
+      APP_URL: https://${DOMAIN} # links inside emails
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Same domain as the site, so no CORS and one certificate.
+        NEXT_PUBLIC_API_URL: https://${DOMAIN}/api
+    restart: unless-stopped
+    depends_on: [api]
+    logging: *logging
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [api, web]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates — keep this volume
+      - caddy_config:/config
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:

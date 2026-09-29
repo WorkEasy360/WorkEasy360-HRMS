@@ -5,6 +5,8 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../middleware/requirePermission";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
+import { assertInOrg } from "../../utils/tenant";
+import { notifyTicketUpdated } from "../../utils/notifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -35,9 +37,9 @@ router.get("/", requirePermission(PERMISSIONS.HELPDESK_MANAGE), async (req, res)
 });
 
 const createSchema = z.object({
-  category: z.string().min(1),
-  subject: z.string().min(1),
-  description: z.string().min(1),
+  category: z.string().trim().min(1).max(200),
+  subject: z.string().trim().min(1).max(200),
+  description: z.string().trim().min(1).max(5000),
 });
 
 router.post("/", async (req, res) => {
@@ -66,6 +68,7 @@ router.patch("/:id", requirePermission(PERMISSIONS.HELPDESK_MANAGE), async (req,
     where: { id: req.params.id, organizationId: req.user!.organizationId },
   });
   if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+  await assertInOrg("employee", parsed.data.assignedToId, req.user!.organizationId, "Assignee");
 
   const resolvedStatuses = ["RESOLVED", "CLOSED"];
   const updated = await prisma.helpDeskTicket.update({
@@ -75,6 +78,7 @@ router.patch("/:id", requirePermission(PERMISSIONS.HELPDESK_MANAGE), async (req,
       resolvedAt: parsed.data.status && resolvedStatuses.includes(parsed.data.status) ? new Date() : ticket.resolvedAt,
     },
   });
+  if (updated.status !== ticket.status) void notifyTicketUpdated(updated.id);
   return res.json(updated);
 });
 

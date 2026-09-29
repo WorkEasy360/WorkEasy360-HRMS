@@ -4,15 +4,18 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Organization } from "@/lib/types";
+import { Button, Card, ErrorBanner, PageHeader, Skeleton } from "@/components/ui";
+import { errorMessage, useFeedback } from "@/components/feedback";
 
 export default function OrganizationSettingsPage() {
   const { hasPermission } = useAuth();
+  const { toast } = useFeedback();
   const [org, setOrg] = useState<Organization | null>(null);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   const canManage = hasPermission("org:manage");
 
@@ -22,13 +25,13 @@ export default function OrganizationSettingsPage() {
         setOrg(data);
         setName(data.name);
       })
+      .catch((err) => setLoadError(errorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setSaved(false);
     setSaving(true);
     try {
       const updated = await apiFetch<Organization>("/organizations/current", {
@@ -36,7 +39,7 @@ export default function OrganizationSettingsPage() {
         body: JSON.stringify({ name }),
       });
       setOrg(updated);
-      setSaved(true);
+      toast.success("Organization name updated");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
     } finally {
@@ -44,41 +47,64 @@ export default function OrganizationSettingsPage() {
     }
   }
 
-  if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
-
   return (
-    <div className="max-w-md space-y-6">
-      <h1 className="text-2xl font-semibold">Organization</h1>
+    <div className="max-w-xl space-y-6">
+      <PageHeader
+        title="Organization"
+        description={
+          canManage
+            ? "Manage how your organization appears across WorkEasy."
+            : "Your organization's details. Only administrators can make changes."
+        }
+      />
 
-      <form onSubmit={onSubmit} className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Organization slug</span>
-          <input disabled value={org?.slug ?? ""} className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500" />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Organization name</span>
-          <input
-            required
-            disabled={!canManage}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
-          />
-        </label>
+      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {saved && <p className="text-sm text-green-700">Saved.</p>}
+      {loading ? (
+        <Card className="space-y-4 p-4">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-10 w-full" />
+        </Card>
+      ) : (
+        <Card className="p-4">
+          <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4">
+            <div>
+              <label htmlFor="org-slug" className="label">
+                Organization slug
+              </label>
+              <input id="org-slug" disabled value={org?.slug ?? ""} className="input" aria-describedby="org-slug-hint" />
+              <p id="org-slug-hint" className="mt-1 text-xs text-slate-500">
+                Used when signing in. The slug can&apos;t be changed.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="org-name" className="label">
+                Organization name
+              </label>
+              <input
+                id="org-name"
+                required
+                disabled={!canManage}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="input"
+              />
+            </div>
 
-        {canManage && (
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-        )}
-      </form>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+
+            {canManage && (
+              <div>
+                <Button type="submit" loading={saving}>
+                  Save changes
+                </Button>
+              </div>
+            )}
+          </form>
+        </Card>
+      )}
     </div>
   );
 }

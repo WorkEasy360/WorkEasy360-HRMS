@@ -28,9 +28,9 @@ router.get("/:id", async (req, res) => {
 });
 
 const createSchema = z.object({
-  title: z.string().min(1),
-  body: z.string().min(1),
-  category: z.string().optional(),
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(50000),
+  category: z.string().trim().max(200).optional(),
 });
 
 router.post("/", requirePermission(PERMISSIONS.HR_GUIDE_MANAGE), async (req, res) => {
@@ -47,9 +47,9 @@ router.post("/", requirePermission(PERMISSIONS.HR_GUIDE_MANAGE), async (req, res
 });
 
 const updateSchema = z.object({
-  title: z.string().min(1).optional(),
-  body: z.string().min(1).optional(),
-  category: z.string().optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+  body: z.string().trim().min(1).max(50000).optional(),
+  category: z.string().trim().max(200).optional(),
 });
 
 router.patch("/:id", requirePermission(PERMISSIONS.HR_GUIDE_MANAGE), async (req, res) => {

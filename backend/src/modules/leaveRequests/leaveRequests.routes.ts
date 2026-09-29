@@ -6,6 +6,8 @@ import { runAutomations } from "../../utils/automations";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
 import { daysBetweenInclusive } from "../../utils/date";
+import { assertCanDecide } from "../../utils/tenant";
+import { notifyLeaveRequested, notifyLeaveDecided } from "../../utils/notifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -49,7 +51,7 @@ const createSchema = z
     leaveTypeId: z.string().uuid(),
     startDate: z.coerce.date(),
     endDate: z.coerce.date(),
-    reason: z.string().optional(),
+    reason: z.string().trim().max(5000).optional(),
   })
   .refine((d) => d.endDate >= d.startDate, { message: "endDate must be on or after startDate", path: ["endDate"] });
 
@@ -69,6 +71,32 @@ router.post("/", async (req, res) => {
   }
 
   const days = daysBetweenInclusive(startDate, endDate);
+
+  const overlapping = await prisma.leaveRequest.findFirst({
+    where: {
+      employeeId,
+      status: { in: ["PENDING", "APPROVED"] },
+      startDate: { lte: endDate },
+      endDate: { gte: startDate },
+    },
+    select: { id: true },
+  });
+  if (overlapping) {
+    return res.status(409).json({ error: "You already have leave booked in that period" });
+  }
+
+  const balance = await prisma.leaveBalance.findUnique({
+    where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year: startDate.getFullYear() } },
+  });
+  if (balance && leaveType.defaultDaysPerYear > 0) {
+    const remaining = balance.allocatedDays - balance.usedDays;
+    if (remaining < days) {
+      return res
+        .status(409)
+        .json({ error: `Insufficient ${leaveType.name} balance: ${remaining} day(s) remaining, ${days} requested` });
+    }
+  }
+
   const request = await prisma.leaveRequest.create({
     data: {
       organizationId: req.user!.organizationId,
@@ -81,6 +109,7 @@ router.post("/", async (req, res) => {
     },
     include: { leaveType: true },
   });
+  void notifyLeaveRequested(request.id);
   return res.status(201).json(request);
 });
 
@@ -101,7 +130,7 @@ router.post("/:id/cancel", async (req, res) => {
   return res.json(updated);
 });
 
-const decisionSchema = z.object({ decisionNote: z.string().optional() });
+const decisionSchema = z.object({ decisionNote: z.string().trim().max(5000).optional() });
 
 async function decide(req: Request, res: Response, approve: boolean) {
   const parsed = decisionSchema.safeParse(req.body ?? {});
@@ -118,28 +147,37 @@ async function decide(req: Request, res: Response, approve: boolean) {
     return res.status(409).json({ error: "Request has already been decided" });
   }
 
-  const canManageAll = req.user!.permissions.includes(PERMISSIONS.LEAVE_MANAGE);
-  const isDirectManager = request.employee.managerId === req.user!.employeeId;
-  if (!canManageAll && !isDirectManager) {
-    return res.status(403).json({ error: "Not authorized to decide this request" });
-  }
+  await assertCanDecide(
+    req,
+    { employeeId: request.employeeId, managerId: request.employee.managerId },
+    PERMISSIONS.LEAVE_MANAGE,
+    "Not authorized to decide this request",
+  );
 
   const updated = await prisma.$transaction(async (tx) => {
-    const decided = await tx.leaveRequest.update({
-      where: { id: request.id },
+    // Conditional transition: only one concurrent decision can win.
+    const { count } = await tx.leaveRequest.updateMany({
+      where: { id: request.id, organizationId: req.user!.organizationId, status: "PENDING" },
       data: {
         status: approve ? "APPROVED" : "REJECTED",
         approverId: req.user!.employeeId,
         decisionNote: parsed.data.decisionNote,
         decidedAt: new Date(),
       },
+    });
+    if (!count) throw new HttpError(409, "Request has already been decided");
+
+    const decided = await tx.leaveRequest.findUniqueOrThrow({
+      where: { id: request.id },
       include: { leaveType: true },
     });
 
     if (approve) {
       const year = decided.startDate.getFullYear();
-      await tx.leaveBalance.upsert({
-        where: { employeeId_leaveTypeId_year: { employeeId: decided.employeeId, leaveTypeId: decided.leaveTypeId, year } },
+      const balanceKey = { employeeId: decided.employeeId, leaveTypeId: decided.leaveTypeId, year };
+      const hadBalance = await tx.leaveBalance.findUnique({ where: { employeeId_leaveTypeId_year: balanceKey } });
+      const balance = await tx.leaveBalance.upsert({
+        where: { employeeId_leaveTypeId_year: balanceKey },
         create: {
           organizationId: req.user!.organizationId,
           employeeId: decided.employeeId,
@@ -150,6 +188,11 @@ async function decide(req: Request, res: Response, approve: boolean) {
         },
         update: { usedDays: { increment: decided.days } },
       });
+      // Re-check after the increment (row-locked), so concurrent approvals can't overdraw.
+      if (hadBalance && decided.leaveType.defaultDaysPerYear > 0 && balance.usedDays > balance.allocatedDays) {
+        const remaining = balance.allocatedDays - (balance.usedDays - decided.days);
+        throw new HttpError(409, `Insufficient leave balance: ${remaining} day(s) remaining, ${decided.days} requested`);
+      }
     }
 
     return decided;
@@ -159,6 +202,7 @@ async function decide(req: Request, res: Response, approve: boolean) {
     await runAutomations("LEAVE_APPROVED", { organizationId: req.user!.organizationId, employeeId: updated.employeeId });
   }
 
+  void notifyLeaveDecided(updated.id);
   return res.json(updated);
 }
 

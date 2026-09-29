@@ -1,9 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { Banknote, CalendarPlus, HandCoins, Play, Receipt, Save } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Employee, ExpenseClaim, LoanRequest, PayrollRun, Payslip } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { errorMessage, useFeedback } from "@/components/feedback";
+import { formatDateTime, formatMoney } from "@/components/format";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -11,16 +15,21 @@ const MONTH_NAMES = [
 ];
 
 export default function PayrollPage() {
+  const { toast, confirm } = useFeedback();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [expenses, setExpenses] = useState<ExpenseClaim[]>([]);
   const [loans, setLoans] = useState<LoanRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [payslipsByRun, setPayslipsByRun] = useState<Record<string, Payslip[]>>({});
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [reimbursingId, setReimbursingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       const [emps, r, exp, ln] = await Promise.all([
         apiFetch<Employee[]>("/employees"),
@@ -32,14 +41,32 @@ export default function PayrollPage() {
       setRuns(r);
       setExpenses(exp);
       setLoans(ln);
+    } catch (err) {
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
   }
 
-  async function markReimbursed(id: string) {
-    await apiFetch(`/expenses/${id}/mark-reimbursed`, { method: "POST" });
-    load();
+  async function markReimbursed(e: ExpenseClaim) {
+    const who = e.employee ? `${e.employee.firstName} ${e.employee.lastName}` : "the employee";
+    const ok = await confirm({
+      title: "Mark this claim as reimbursed?",
+      description: `${formatMoney(e.amount)} ${e.category.toLowerCase()} claim for ${who}. Only do this once the money has been paid out.`,
+      confirmLabel: "Mark reimbursed",
+      destructive: false,
+    });
+    if (!ok) return;
+    setReimbursingId(e.id);
+    try {
+      await apiFetch(`/expenses/${e.id}/mark-reimbursed`, { method: "POST" });
+      toast.success("Expense marked as reimbursed");
+      load();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setReimbursingId(null);
+    }
   }
 
   useEffect(() => {
@@ -47,188 +74,304 @@ export default function PayrollPage() {
     load();
   }, []);
 
-  async function processRun(id: string) {
-    setError(null);
+  async function processRun(run: PayrollRun) {
+    const ok = await confirm({
+      title: `Process payroll for ${MONTH_NAMES[run.month - 1]} ${run.year}?`,
+      description: "Payslips will be generated for all employees with compensation, including loan deductions. This cannot be undone.",
+      confirmLabel: "Process payroll",
+      destructive: false,
+    });
+    if (!ok) return;
+    setProcessingId(run.id);
     try {
-      const result = await apiFetch<{ payslips: Payslip[] }>(`/payroll/${id}/process`, { method: "POST" });
-      setPayslipsByRun((prev) => ({ ...prev, [id]: result.payslips }));
+      const result = await apiFetch<{ payslips: Payslip[] }>(`/payroll/${run.id}/process`, { method: "POST" });
+      setPayslipsByRun((prev) => ({ ...prev, [run.id]: result.payslips }));
+      toast.success(`Payroll processed for ${MONTH_NAMES[run.month - 1]} ${run.year}`);
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong");
+      toast.error(errorMessage(err));
+    } finally {
+      setProcessingId(null);
     }
   }
 
   async function viewPayslips(id: string) {
-    const payslips = await apiFetch<Payslip[]>(`/payroll/${id}/payslips`);
-    setPayslipsByRun((prev) => ({ ...prev, [id]: payslips }));
+    setViewingId(id);
+    try {
+      const payslips = await apiFetch<Payslip[]>(`/payroll/${id}/payslips`);
+      setPayslipsByRun((prev) => ({ ...prev, [id]: payslips }));
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setViewingId(null);
+    }
   }
+
+  function hidePayslips(id: string) {
+    setPayslipsByRun((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
+  const draftRuns = runs.filter((r) => r.status === "DRAFT").length;
+  const toReimburse = expenses.filter((e) => e.status === "APPROVED");
+  const activeLoans = loans.filter((l) => l.status === "ACTIVE");
+  const loanOutstanding = activeLoans.reduce((sum, l) => sum + (Number(l.remainingAmount) || 0), 0);
 
   return (
     <div className="max-w-3xl space-y-8">
-      <h1 className="text-2xl font-semibold">Payroll</h1>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      <PageHeader
+        title="Payroll"
+        description="Set compensation, run monthly payroll and settle expense claims and loans."
+      />
 
-      <CompensationForm employees={employees} />
+      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
-      <NewRunForm onCreated={load} />
+      {!loading && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SummaryTile label="Draft runs" value={String(draftRuns)} tone="text-amber-600" />
+          <SummaryTile
+            label="To reimburse"
+            value={formatMoney(toReimburse.reduce((sum, e) => sum + (Number(e.amount) || 0), 0))}
+            hint={`${toReimburse.length} approved claim(s)`}
+            tone="text-blue-600"
+          />
+          <SummaryTile
+            label="Loans outstanding"
+            value={formatMoney(loanOutstanding)}
+            hint={`${activeLoans.length} active loan(s)`}
+            tone="text-slate-900"
+          />
+        </div>
+      )}
 
-      <div>
+      <div className="grid grid-cols-1 gap-6">
+        <CompensationForm
+          employees={employees}
+          onSaved={() => toast.success("Compensation saved")}
+        />
+
+        <NewRunForm
+          onCreated={() => {
+            toast.success("Payroll run created");
+            load();
+          }}
+        />
+      </div>
+
+      <section>
         <h2 className="mb-2 text-sm font-medium text-slate-500">Payroll runs</h2>
         {loading ? (
-          <p className="text-sm text-slate-500">Loading…</p>
+          <LoadingRows rows={3} />
+        ) : runs.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={Banknote}
+              title="No payroll runs yet"
+              description="Create a run for a month above, then process it to generate payslips for your employees."
+            />
+          </Card>
         ) : (
           <div className="space-y-3">
             {runs.map((run) => (
-              <div key={run.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">
+              <Card key={run.id} className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="font-medium text-slate-900">
                       {MONTH_NAMES[run.month - 1]} {run.year}
                     </p>
-                    <StatusBadge status={run.status} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={run.status} />
+                      {run.processedAt && (
+                        <span className="text-xs text-slate-400">Processed {formatDateTime(run.processedAt)}</span>
+                      )}
+                    </div>
                   </div>
                   {run.status === "DRAFT" ? (
-                    <button onClick={() => processRun(run.id)} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">
+                    <Button size="sm" icon={Play} loading={processingId === run.id} onClick={() => processRun(run)}>
                       Process
-                    </button>
+                    </Button>
+                  ) : payslipsByRun[run.id] ? (
+                    <Button size="sm" variant="ghost" onClick={() => hidePayslips(run.id)}>
+                      Hide payslips
+                    </Button>
                   ) : (
-                    <button onClick={() => viewPayslips(run.id)} className="text-xs font-medium text-blue-600 hover:underline">
+                    <Button size="sm" variant="secondary" loading={viewingId === run.id} onClick={() => viewPayslips(run.id)}>
                       View payslips
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {payslipsByRun[run.id] && (
-                  <table className="mt-3 w-full text-xs">
-                    <thead className="text-left text-slate-500">
-                      <tr>
-                        <th className="py-1 font-medium">Employee</th>
-                        <th className="py-1 font-medium">Gross</th>
-                        <th className="py-1 font-medium">Deductions</th>
-                        <th className="py-1 font-medium">Net</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {payslipsByRun[run.id].map((p) => (
-                        <tr key={p.id}>
-                          <td className="py-1">
-                            {p.employee?.firstName} {p.employee?.lastName}
-                          </td>
-                          <td className="py-1">₹{p.grossPay.toLocaleString()}</td>
-                          <td className="py-1">₹{p.deductions.toLocaleString()}</td>
-                          <td className="py-1">₹{p.netPay.toLocaleString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="mt-3">
+                    {payslipsByRun[run.id].length === 0 ? (
+                      <p className="text-sm text-slate-500">No payslips were generated for this run.</p>
+                    ) : (
+                      <div className="table-wrap shadow-none">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Employee</th>
+                              <th>Gross</th>
+                              <th>Deductions</th>
+                              <th>Net</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {payslipsByRun[run.id].map((p) => (
+                              <tr key={p.id}>
+                                <td className="font-medium text-slate-900">
+                                  {p.employee?.firstName} {p.employee?.lastName}
+                                </td>
+                                <td className="whitespace-nowrap text-slate-500">{formatMoney(p.grossPay)}</td>
+                                <td className="whitespace-nowrap text-slate-500">{formatMoney(p.deductions)}</td>
+                                <td className="whitespace-nowrap font-medium text-slate-900">{formatMoney(p.netPay)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 )}
-              </div>
+              </Card>
             ))}
-            {runs.length === 0 && <p className="text-sm text-slate-500">No payroll runs yet.</p>}
           </div>
         )}
-      </div>
+      </section>
 
-      <div>
+      <section>
         <h2 className="mb-2 text-sm font-medium text-slate-500">Expense claims</h2>
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
-              <tr>
-                <th className="px-4 py-2 font-medium">Employee</th>
-                <th className="px-4 py-2 font-medium">Category</th>
-                <th className="px-4 py-2 font-medium">Amount</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {expenses.map((e) => (
-                <tr key={e.id}>
-                  <td className="px-4 py-2">
-                    {e.employee?.firstName} {e.employee?.lastName}
-                  </td>
-                  <td className="px-4 py-2 text-slate-500">{e.category}</td>
-                  <td className="px-4 py-2 text-slate-500">₹{e.amount.toLocaleString()}</td>
-                  <td className="px-4 py-2"><StatusBadge status={e.status} /></td>
-                  <td className="px-4 py-2 text-right">
-                    {e.status === "APPROVED" && (
-                      <button onClick={() => markReimbursed(e.id)} className="text-xs font-medium text-blue-600 hover:underline">
-                        Mark reimbursed
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {expenses.length === 0 && (
+        {loading ? (
+          <LoadingRows rows={3} />
+        ) : expenses.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={Receipt}
+              title="No expense claims yet"
+              description="Claims submitted by employees will appear here. Approved claims can be marked as reimbursed once paid."
+            />
+          </Card>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                    No expense claims yet.
-                  </td>
+                  <th>Employee</th>
+                  <th>Category</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody>
+                {expenses.map((e) => (
+                  <tr key={e.id}>
+                    <td className="font-medium text-slate-900">
+                      {e.employee?.firstName} {e.employee?.lastName}
+                    </td>
+                    <td className="text-slate-500">{e.category}</td>
+                    <td className="whitespace-nowrap text-slate-500">{formatMoney(e.amount)}</td>
+                    <td>
+                      <StatusBadge status={e.status} />
+                    </td>
+                    <td className="text-right">
+                      {e.status === "APPROVED" && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="whitespace-nowrap"
+                          loading={reimbursingId === e.id}
+                          onClick={() => markReimbursed(e)}
+                        >
+                          Mark reimbursed
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
-      <div>
+      <section>
         <h2 className="mb-2 text-sm font-medium text-slate-500">Loans</h2>
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
-              <tr>
-                <th className="px-4 py-2 font-medium">Employee</th>
-                <th className="px-4 py-2 font-medium">Amount</th>
-                <th className="px-4 py-2 font-medium">Remaining</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loans.map((l) => (
-                <tr key={l.id}>
-                  <td className="px-4 py-2">
-                    {l.employee?.firstName} {l.employee?.lastName}
-                  </td>
-                  <td className="px-4 py-2 text-slate-500">₹{l.amount.toLocaleString()}</td>
-                  <td className="px-4 py-2 text-slate-500">{l.remainingAmount != null ? `₹${l.remainingAmount.toLocaleString()}` : "—"}</td>
-                  <td className="px-4 py-2"><StatusBadge status={l.status} /></td>
-                </tr>
-              ))}
-              {loans.length === 0 && (
+        {loading ? (
+          <LoadingRows rows={3} />
+        ) : loans.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={HandCoins}
+              title="No loan requests yet"
+              description="Loan requests from employees will appear here with their repayment progress."
+            />
+          </Card>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                    No loan requests yet.
-                  </td>
+                  <th>Employee</th>
+                  <th>Amount</th>
+                  <th>Remaining</th>
+                  <th>Status</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody>
+                {loans.map((l) => (
+                  <tr key={l.id}>
+                    <td className="font-medium text-slate-900">
+                      {l.employee?.firstName} {l.employee?.lastName}
+                    </td>
+                    <td className="whitespace-nowrap text-slate-500">{formatMoney(l.amount)}</td>
+                    <td className="whitespace-nowrap text-slate-500">{formatMoney(l.remainingAmount)}</td>
+                    <td>
+                      <StatusBadge status={l.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function CompensationForm({ employees }: { employees: Employee[] }) {
+function SummaryTile({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone: string }) {
+  return (
+    <Card className="px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
+      {hint && <p className="text-xs text-slate-400">{hint}</p>}
+    </Card>
+  );
+}
+
+function CompensationForm({ employees, onSaved }: { employees: Employee[]; onSaved: () => void }) {
   const [employeeId, setEmployeeId] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [annualCTC, setAnnualCTC] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setSuccess(false);
     setSubmitting(true);
     try {
       await apiFetch("/compensation", {
         method: "POST",
         body: JSON.stringify({ employeeId, effectiveFrom, annualCTC: Number(annualCTC) }),
       });
-      setSuccess(true);
       setAnnualCTC("");
+      onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
     } finally {
@@ -237,24 +380,60 @@ function CompensationForm({ employees }: { employees: Employee[] }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-4">
-      <h2 className="col-span-4 text-sm font-medium text-slate-500">Set compensation</h2>
-      <select required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:col-span-2">
-        <option value="">Employee…</option>
-        {employees.map((emp) => (
-          <option key={emp.id} value={emp.id}>
-            {emp.firstName} {emp.lastName}
-          </option>
-        ))}
-      </select>
-      <input required type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      <input required type="number" min="1" placeholder="Annual CTC" value={annualCTC} onChange={(e) => setAnnualCTC(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      {error && <p className="col-span-4 text-sm text-red-600">{error}</p>}
-      {success && <p className="col-span-4 text-sm text-green-700">Compensation saved.</p>}
-      <button type="submit" disabled={submitting} className="col-span-4 w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-        {submitting ? "Saving…" : "Save compensation"}
-      </button>
-    </form>
+    <Card className="p-4">
+      <h2 className="mb-3 text-sm font-medium text-slate-900">Set compensation</h2>
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label htmlFor="comp-employee" className="label">
+            Employee
+          </label>
+          <select id="comp-employee" required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="input">
+            <option value="">Select an employee…</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.firstName} {emp.lastName}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="comp-effective" className="label">
+            Effective from
+          </label>
+          <input
+            id="comp-effective"
+            required
+            type="date"
+            value={effectiveFrom}
+            onChange={(e) => setEffectiveFrom(e.target.value)}
+            className="input"
+          />
+        </div>
+        <div>
+          <label htmlFor="comp-ctc" className="label">
+            Annual CTC (₹)
+          </label>
+          <input
+            id="comp-ctc"
+            required
+            type="number"
+            min="1"
+            value={annualCTC}
+            onChange={(e) => setAnnualCTC(e.target.value)}
+            className="input"
+          />
+          {Number(annualCTC) > 0 && (
+            <p className="mt-1 text-xs text-slate-400">≈ {formatMoney(Math.round(Number(annualCTC) / 12))} per month</p>
+          )}
+        </div>
+        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        <div className="sm:col-span-2">
+          <Button type="submit" icon={Save} loading={submitting}>
+            Save compensation
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }
 
@@ -280,20 +459,34 @@ function NewRunForm({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-4">
-      <h2 className="col-span-4 text-sm font-medium text-slate-500">Start a payroll run</h2>
-      <select value={month} onChange={(e) => setMonth(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-        {MONTH_NAMES.map((m, i) => (
-          <option key={m} value={i + 1}>
-            {m}
-          </option>
-        ))}
-      </select>
-      <input required type="number" value={year} onChange={(e) => setYear(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      {error && <p className="col-span-4 text-sm text-red-600">{error}</p>}
-      <button type="submit" disabled={submitting} className="col-span-4 w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-        {submitting ? "Creating…" : "Create run"}
-      </button>
-    </form>
+    <Card className="p-4">
+      <h2 className="mb-3 text-sm font-medium text-slate-900">Start a payroll run</h2>
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="run-month" className="label">
+            Month
+          </label>
+          <select id="run-month" value={month} onChange={(e) => setMonth(e.target.value)} className="input">
+            {MONTH_NAMES.map((m, i) => (
+              <option key={m} value={i + 1}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="run-year" className="label">
+            Year
+          </label>
+          <input id="run-year" required type="number" value={year} onChange={(e) => setYear(e.target.value)} className="input" />
+        </div>
+        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        <div className="sm:col-span-2">
+          <Button type="submit" icon={CalendarPlus} loading={submitting}>
+            Create run
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

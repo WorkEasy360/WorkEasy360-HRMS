@@ -1,19 +1,28 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { Plus, Receipt } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { ExpenseClaim } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { errorMessage, useFeedback } from "@/components/feedback";
+import { formatDate, formatMoney } from "@/components/format";
 
 export default function MyExpensesPage() {
+  const { toast } = useFeedback();
   const [claims, setClaims] = useState<ExpenseClaim[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       setClaims(await apiFetch<ExpenseClaim[]>("/expenses/me"));
+    } catch (err) {
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -24,63 +33,116 @@ export default function MyExpensesPage() {
     load();
   }, []);
 
+  const sumOf = (list: ExpenseClaim[]) => list.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+  const pending = claims.filter((c) => c.status === "PENDING");
+  const awaitingPayout = claims.filter((c) => c.status === "APPROVED");
+  const reimbursed = claims.filter((c) => c.status === "REIMBURSED");
+
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">My Expenses</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          {showForm ? "Cancel" : "New claim"}
-        </button>
-      </div>
+      <PageHeader
+        title="My Expenses"
+        description="Submit expense claims and follow them through approval and reimbursement."
+        actions={
+          <Button
+            variant={showForm ? "secondary" : "primary"}
+            icon={showForm ? undefined : Plus}
+            onClick={() => setShowForm((v) => !v)}
+          >
+            {showForm ? "Close form" : "New claim"}
+          </Button>
+        }
+      />
+
+      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
       {showForm && (
         <ExpenseForm
           onCreated={() => {
             setShowForm(false);
+            toast.success("Expense claim submitted");
             load();
           }}
         />
       )}
 
+      {!loading && claims.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SummaryTile label="Pending" value={formatMoney(sumOf(pending))} hint={`${pending.length} claim(s)`} tone="text-amber-600" />
+          <SummaryTile
+            label="Awaiting payout"
+            value={formatMoney(sumOf(awaitingPayout))}
+            hint={`${awaitingPayout.length} claim(s)`}
+            tone="text-blue-600"
+          />
+          <SummaryTile
+            label="Reimbursed"
+            value={formatMoney(sumOf(reimbursed))}
+            hint={`${reimbursed.length} claim(s)`}
+            tone="text-emerald-600"
+          />
+        </div>
+      )}
+
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <LoadingRows rows={4} />
+      ) : claims.length === 0 ? (
+        !loadError && (
+          <Card>
+            <EmptyState
+              icon={Receipt}
+              title="No expense claims yet"
+              description="Spent money on work travel, meals or supplies? Submit a claim to get reimbursed."
+              action={
+                !showForm && (
+                  <Button icon={Plus} onClick={() => setShowForm(true)}>
+                    New claim
+                  </Button>
+                )
+              }
+            />
+          </Card>
+        )
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <th className="px-4 py-2 font-medium">Date</th>
-                <th className="px-4 py-2 font-medium">Category</th>
-                <th className="px-4 py-2 font-medium">Amount</th>
-                <th className="px-4 py-2 font-medium">Status</th>
+                <th>Date</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {claims.map((c) => (
                 <tr key={c.id}>
-                  <td className="px-4 py-2">{new Date(c.expenseDate).toLocaleDateString()}</td>
-                  <td className="px-4 py-2 text-slate-500">{c.category}</td>
-                  <td className="px-4 py-2 text-slate-500">₹{c.amount.toLocaleString()}</td>
-                  <td className="px-4 py-2">
+                  <td className="whitespace-nowrap text-slate-900">{formatDate(c.expenseDate)}</td>
+                  <td className="text-slate-500">
+                    {c.category}
+                    {c.description && <span className="block text-xs text-slate-400">{c.description}</span>}
+                  </td>
+                  <td className="whitespace-nowrap font-medium text-slate-900">{formatMoney(c.amount)}</td>
+                  <td>
                     <StatusBadge status={c.status} />
                   </td>
                 </tr>
               ))}
-              {claims.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                    No expense claims yet.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+function SummaryTile({ label, value, hint, tone }: { label: string; value: string; hint: string; tone: string }) {
+  return (
+    <Card className="px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
+      <p className="text-xs text-slate-400">{hint}</p>
+    </Card>
   );
 }
 
@@ -110,21 +172,60 @@ function ExpenseForm({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
-      <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-        <option value="Travel">Travel</option>
-        <option value="Meals">Meals</option>
-        <option value="Office Supplies">Office Supplies</option>
-        <option value="Software">Software</option>
-        <option value="Other">Other</option>
-      </select>
-      <input required type="number" min="1" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      <input required type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      <input placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
-      <button type="submit" disabled={submitting} className="col-span-2 w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-        {submitting ? "Submitting…" : "Submit claim"}
-      </button>
-    </form>
+    <Card className="p-4">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="expense-category" className="label">
+            Category
+          </label>
+          <select id="expense-category" value={category} onChange={(e) => setCategory(e.target.value)} className="input">
+            <option value="Travel">Travel</option>
+            <option value="Meals">Meals</option>
+            <option value="Office Supplies">Office Supplies</option>
+            <option value="Software">Software</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="expense-amount" className="label">
+            Amount (₹)
+          </label>
+          <input
+            id="expense-amount"
+            required
+            type="number"
+            min="1"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="input"
+          />
+        </div>
+        <div>
+          <label htmlFor="expense-date" className="label">
+            Expense date
+          </label>
+          <input
+            id="expense-date"
+            required
+            type="date"
+            value={expenseDate}
+            onChange={(e) => setExpenseDate(e.target.value)}
+            className="input"
+          />
+        </div>
+        <div>
+          <label htmlFor="expense-description" className="label">
+            Description <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input id="expense-description" value={description} onChange={(e) => setDescription(e.target.value)} className="input" />
+        </div>
+        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        <div className="sm:col-span-2">
+          <Button type="submit" loading={submitting}>
+            Submit claim
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

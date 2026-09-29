@@ -1,5 +1,8 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // native = the machine running `prisma generate`; the others cover Amazon Linux 2023 (EC2/Beanstalk)
+  // and Debian-based Node images (ECS/App Runner), so a build made elsewhere still runs on AWS.
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -145,22 +148,69 @@ model Organization {
 }
 
 model User {
-  id             String   @id @default(uuid())
-  organizationId String
-  email          String
-  passwordHash   String
-  totpSecret     String?
-  totpEnabled    Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                 String    @id @default(uuid())
+  organizationId     String
+  email              String
+  passwordHash       String
+  totpSecret         String?
+  totpEnabled        Boolean   @default(false)
+  // Last TOTP time step accepted, so a code can't be replayed within its window.
+  lastTotpStep       Int?
+  // Consecutive failed password/TOTP attempts; the account locks briefly after too many.
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
+  // Set for accounts created with a temporary password.
+  mustChangePassword Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee     Employee?
-  userRoles    UserRole[]
-  auditLogs    AuditLog[]
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee       Employee?
+  userRoles      UserRole[]
+  auditLogs      AuditLog[]
+  refreshTokens  RefreshToken[]
+  passwordTokens PasswordToken[]
 
   @@unique([organizationId, email])
   @@map("users")
+}
+
+enum PasswordTokenPurpose {
+  INVITE // "set your password" link in the welcome email
+  RESET // "forgot password" / HR-initiated reset link
+}
+
+// Single-use links for setting a password. Only a SHA-256 hash of the token is stored.
+model PasswordToken {
+  id        String               @id @default(uuid())
+  userId    String
+  tokenHash String               @unique
+  purpose   PasswordTokenPurpose
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_tokens")
+}
+
+// One row per issued refresh token. Tokens rotate on every refresh; presenting a
+// revoked token revokes the whole family (likely theft).
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  familyId  String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
 }
 
 model Department {

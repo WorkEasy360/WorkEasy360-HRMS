@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { apiFetch, clearTokens, setTokens } from "./api";
+import { apiFetch, clearTokens, getRefreshToken, SESSION_EXPIRED_EVENT, setTokens } from "./api";
 import { CurrentUser, Organization } from "./types";
 
 type LoginResult = { mfaRequired: true; mfaToken: string } | { mfaRequired: false };
@@ -48,6 +48,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     }
   }, [refetchUser]);
+
+  // apiFetch signals when the refresh token is no longer valid.
+  useEffect(() => {
+    const onExpired = () => setUser(null);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, []);
 
   const login = useCallback(
     async (organizationSlug: string, email: string, password: string): Promise<LoginResult> => {
@@ -104,6 +111,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    // Revoke the refresh token server-side; sign out locally regardless of the result.
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).catch(() => {});
+    }
     clearTokens();
     setUser(null);
   }, []);

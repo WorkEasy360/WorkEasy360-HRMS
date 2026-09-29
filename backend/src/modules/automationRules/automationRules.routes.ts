@@ -20,10 +20,16 @@ router.get("/", async (req, res) => {
 });
 
 const createSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1).max(200),
   trigger: z.enum(["LEAVE_APPROVED", "EMPLOYEE_ONBOARDED", "TIMESHEET_APPROVED"]),
   actionType: z.enum(["CREATE_ANNOUNCEMENT", "ASSIGN_ONBOARDING_TASK"]),
-  actionConfig: z.record(z.string(), z.unknown()),
+  // Flat config consumed by utils/automations (title/body): bounded keys and primitive values only.
+  actionConfig: z
+    .record(
+      z.string().max(100),
+      z.union([z.string().max(2000), z.number().finite(), z.boolean(), z.null()]),
+    )
+    .refine((c) => Object.keys(c).length <= 20, { message: "actionConfig can have at most 20 keys" }),
 });
 
 router.post("/", async (req, res) => {

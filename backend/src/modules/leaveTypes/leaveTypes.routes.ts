@@ -18,8 +18,8 @@ router.get("/", async (req, res) => {
 });
 
 const createSchema = z.object({
-  name: z.string().min(1),
-  defaultDaysPerYear: z.number().int().min(0).default(0),
+  name: z.string().trim().min(1).max(200),
+  defaultDaysPerYear: z.number().int().min(0).max(366).default(0),
 });
 
 router.post("/", requirePermission(PERMISSIONS.LEAVE_MANAGE), async (req, res) => {

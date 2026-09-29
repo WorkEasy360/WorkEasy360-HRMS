@@ -3,11 +3,24 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { ApiError } from "@/lib/api";
+import { AuthShell } from "@/components/AuthShell";
+import { errorMessage, useFeedback } from "@/components/feedback";
+import { PasswordInput, PasswordStrength, passwordIssues } from "@/components/PasswordInput";
+import { Button, ErrorBanner } from "@/components/ui";
 import { useAuth } from "@/lib/auth-context";
+
+function slugify(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
 
 export default function RegisterPage() {
   const { register } = useAuth();
+  const { toast } = useFeedback();
   const router = useRouter();
   const [form, setForm] = useState({
     organizationName: "",
@@ -17,6 +30,8 @@ export default function RegisterPage() {
     email: "",
     password: "",
   });
+  // Keep suggesting a slug from the name until the user edits the slug themselves.
+  const [slugTouched, setSlugTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -27,84 +42,96 @@ export default function RegisterPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (passwordIssues(form.password).length) {
+      setError(`Password still needs ${passwordIssues(form.password).join(", ")}.`);
+      return;
+    }
     setSubmitting(true);
     try {
-      await register(form);
-      router.push("/dashboard");
+      const org = await register(form);
+      try {
+        localStorage.setItem("lastOrganizationSlug", org.slug);
+      } catch {}
+      toast.success(`Welcome to WorkEasy360! Your team signs in with the organization ID "${org.slug}".`);
+      router.replace("/dashboard");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong");
+      setError(errorMessage(err));
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
-      <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
+    <AuthShell title="Create your organization" subtitle="You'll be the first admin. It takes under a minute.">
+      <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <h1 className="text-xl font-semibold">Create your organization</h1>
-          <p className="mt-1 text-sm text-slate-500">You&apos;ll be the first Admin user.</p>
+          <label htmlFor="org-name" className="label">Company name</label>
+          <input
+            id="org-name"
+            required
+            maxLength={120}
+            value={form.organizationName}
+            onChange={(e) => {
+              set("organizationName", e.target.value);
+              if (!slugTouched) set("organizationSlug", slugify(e.target.value));
+            }}
+            placeholder="Acme Inc"
+            className="input"
+          />
         </div>
-
-        <Field label="Organization name" value={form.organizationName} onChange={(v) => set("organizationName", v)} placeholder="Acme Inc" />
-        <Field
-          label="Organization slug (used to sign in)"
-          value={form.organizationSlug}
-          onChange={(v) => set("organizationSlug", v.toLowerCase())}
-          placeholder="acme"
-        />
+        <div>
+          <label htmlFor="org-slug" className="label">Organization ID</label>
+          <input
+            id="org-slug"
+            required
+            maxLength={48}
+            pattern="[a-z0-9-]{2,48}"
+            title="Lowercase letters, numbers and hyphens"
+            autoCapitalize="none"
+            spellCheck={false}
+            value={form.organizationSlug}
+            onChange={(e) => {
+              setSlugTouched(true);
+              set("organizationSlug", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
+            }}
+            placeholder="acme"
+            className="input"
+          />
+          <p className="mt-1 text-xs text-slate-500">Everyone uses this to sign in. Lowercase letters, numbers and hyphens.</p>
+        </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="First name" value={form.firstName} onChange={(v) => set("firstName", v)} />
-          <Field label="Last name" value={form.lastName} onChange={(v) => set("lastName", v)} />
+          <div>
+            <label htmlFor="first-name" className="label">First name</label>
+            <input id="first-name" required maxLength={80} autoComplete="given-name" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} className="input" />
+          </div>
+          <div>
+            <label htmlFor="last-name" className="label">Last name</label>
+            <input id="last-name" required maxLength={80} autoComplete="family-name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} className="input" />
+          </div>
         </div>
-        <Field label="Email" type="email" value={form.email} onChange={(v) => set("email", v)} placeholder="you@company.com" />
-        <Field label="Password" type="password" value={form.password} onChange={(v) => set("password", v)} />
+        <div>
+          <label htmlFor="email" className="label">Work email</label>
+          <input id="email" type="email" required autoComplete="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="you@company.com" className="input" />
+        </div>
+        <div>
+          <label htmlFor="password" className="label">Password</label>
+          <PasswordInput id="password" required autoComplete="new-password" value={form.password} onChange={(v) => set("password", v)} />
+          <PasswordStrength password={form.password} />
+        </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        <ErrorBanner message={error} />
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {submitting ? "Creating…" : "Create organization"}
-        </button>
+        <Button type="submit" loading={submitting} className="w-full">
+          Create organization
+        </Button>
 
         <p className="text-center text-sm text-slate-500">
           Already have an account?{" "}
-          <Link href="/login" className="font-medium text-slate-900 underline">
+          <Link href="/login" className="font-medium text-blue-600 hover:underline">
             Sign in
           </Link>
         </p>
       </form>
-    </main>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  type = "text",
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  placeholder?: string;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block font-medium text-slate-700">{label}</span>
-      <input
-        required
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-      />
-    </label>
+    </AuthShell>
   );
 }

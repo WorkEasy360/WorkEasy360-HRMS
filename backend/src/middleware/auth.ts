@@ -20,6 +20,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     req.user = verifyAccessToken(header.slice("Bearer ".length));
     next();
   } catch {
+    // verifyAccessToken also rejects MFA-challenge and refresh tokens (audience check).
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 }

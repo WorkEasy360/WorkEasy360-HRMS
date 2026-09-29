@@ -36,6 +36,7 @@ export interface CurrentUser {
   roles: string[];
   permissions: string[];
   totpEnabled: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface AttendanceRecord {

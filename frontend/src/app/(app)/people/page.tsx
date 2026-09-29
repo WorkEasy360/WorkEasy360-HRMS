@@ -2,24 +2,34 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { Search, UserPlus, Users } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Employee } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { errorMessage, useFeedback } from "@/components/feedback";
+import { AccessNotice, type AccessResult } from "@/components/AccessNotice";
 
 export default function PeoplePage() {
   const { hasPermission } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
   async function load(q?: string) {
     setLoading(true);
+    setLoadError(null);
     try {
       const query = q ? `?search=${encodeURIComponent(q)}` : "";
       const data = await apiFetch<Employee[]>(`/employees${query}`);
       setEmployees(data);
+      setActiveSearch(q ?? "");
+    } catch (err) {
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -35,71 +45,128 @@ export default function PeoplePage() {
     load(search);
   }
 
+  function clearSearch() {
+    setSearch("");
+    load();
+  }
+
   const canManage = hasPermission("employee:write");
+  const activeCount = employees.filter((e) => e.status === "ACTIVE").length;
+  const onboardingCount = employees.filter((e) => e.status === "ONBOARDING").length;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Employee Directory</h1>
-          <p className="mt-1 text-sm text-slate-500">{employees.length} employee(s)</p>
-        </div>
-        {canManage && (
-          <button
-            onClick={() => setShowAddForm((v) => !v)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            {showAddForm ? "Cancel" : "Add employee"}
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Employee Directory"
+        description="Find colleagues, view their profiles and add new employees."
+        actions={
+          canManage && (
+            <Button
+              variant={showAddForm ? "secondary" : "primary"}
+              icon={showAddForm ? undefined : UserPlus}
+              onClick={() => setShowAddForm((v) => !v)}
+            >
+              {showAddForm ? "Close form" : "Add employee"}
+            </Button>
+          )
+        }
+      />
+
+      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
       {showAddForm && <AddEmployeeForm onCreated={() => load(search)} />}
 
-      <form onSubmit={onSearch} className="max-w-sm">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or employee code…"
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-        />
+      <form onSubmit={onSearch} className="flex max-w-md items-end gap-2">
+        <div className="flex-1">
+          <label htmlFor="people-search" className="label">
+            Search employees
+          </label>
+          <input
+            id="people-search"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Name or employee code…"
+            className="input"
+          />
+        </div>
+        <Button type="submit" variant="secondary" icon={Search}>
+          Search
+        </Button>
       </form>
 
+      {!loading && employees.length > 0 && (
+        <p className="text-sm text-slate-500">
+          {employees.length} employee{employees.length === 1 ? "" : "s"}
+          {activeSearch ? ` matching “${activeSearch}”` : ""}
+          {activeCount > 0 && ` · ${activeCount} active`}
+          {onboardingCount > 0 && ` · ${onboardingCount} onboarding`}
+        </p>
+      )}
+
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <LoadingRows rows={6} />
+      ) : employees.length === 0 ? (
+        <Card>
+          {activeSearch ? (
+            <EmptyState
+              icon={Search}
+              title={`No employees match “${activeSearch}”`}
+              description="Check the spelling or search by employee code instead."
+              action={
+                <Button variant="secondary" onClick={clearSearch}>
+                  Clear search
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Users}
+              title="No employees yet"
+              description={
+                canManage
+                  ? "Add your first employee to start building your directory."
+                  : "Employees will appear here once they have been added by HR."
+              }
+              action={
+                canManage &&
+                !showAddForm && (
+                  <Button icon={UserPlus} onClick={() => setShowAddForm(true)}>
+                    Add employee
+                  </Button>
+                )
+              }
+            />
+          )}
+        </Card>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-500">
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <th className="px-4 py-2 font-medium">Employee</th>
-                <th className="px-4 py-2 font-medium">Code</th>
-                <th className="px-4 py-2 font-medium">Designation</th>
-                <th className="px-4 py-2 font-medium">Department</th>
-                <th className="px-4 py-2 font-medium">Status</th>
+                <th>Employee</th>
+                <th>Code</th>
+                <th>Designation</th>
+                <th>Department</th>
+                <th>Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {employees.map((emp) => (
-                <tr key={emp.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2">
-                    <Link href={`/people/${emp.id}`} className="font-medium text-slate-900 hover:underline">
+                <tr key={emp.id}>
+                  <td>
+                    <Link href={`/people/${emp.id}`} className="font-medium text-slate-900 hover:text-blue-600 hover:underline">
                       {emp.firstName} {emp.lastName}
                     </Link>
                   </td>
-                  <td className="px-4 py-2 text-slate-500">{emp.employeeCode}</td>
-                  <td className="px-4 py-2 text-slate-500">{emp.designation ?? "—"}</td>
-                  <td className="px-4 py-2 text-slate-500">{emp.department?.name ?? "—"}</td>
-                  <td className="px-4 py-2"><StatusBadge status={emp.status} /></td>
-                </tr>
-              ))}
-              {employees.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                    No employees found.
+                  <td className="whitespace-nowrap text-slate-500">{emp.employeeCode}</td>
+                  <td className="text-slate-500">{emp.designation ?? "—"}</td>
+                  <td className="text-slate-500">{emp.department?.name ?? "—"}</td>
+                  <td>
+                    <StatusBadge status={emp.status} />
                   </td>
                 </tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
@@ -109,9 +176,10 @@ export default function PeoplePage() {
 }
 
 function AddEmployeeForm({ onCreated }: { onCreated: () => void }) {
+  const { toast } = useFeedback();
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", designation: "" });
   const [error, setError] = useState<string | null>(null);
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [access, setAccess] = useState<AccessResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   function set<K extends keyof typeof form>(key: K, value: string) {
@@ -123,11 +191,12 @@ function AddEmployeeForm({ onCreated }: { onCreated: () => void }) {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await apiFetch<{ tempPassword: string }>("/employees", {
+      const result = await apiFetch<AccessResult>("/employees", {
         method: "POST",
         body: JSON.stringify(form),
       });
-      setTempPassword(result.tempPassword);
+      setAccess({ ...result, email: form.email });
+      toast.success(`${form.firstName} ${form.lastName} added to the directory`);
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
@@ -137,24 +206,66 @@ function AddEmployeeForm({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
-      <input required placeholder="First name" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      <input required placeholder="Last name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      <input required type="email" placeholder="Email" value={form.email} onChange={(e) => set("email", e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      <input placeholder="Designation" value={form.designation} onChange={(e) => set("designation", e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-      {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
-      {tempPassword && (
-        <p className="col-span-2 text-sm text-green-700">
-          Employee created. Temporary password: <code className="rounded bg-slate-100 px-1">{tempPassword}</code>
-        </p>
-      )}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="col-span-2 w-fit rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-      >
-        {submitting ? "Creating…" : "Create employee"}
-      </button>
-    </form>
+    <Card className="p-4">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="emp-first-name" className="label">
+            First name
+          </label>
+          <input
+            id="emp-first-name"
+            required
+            value={form.firstName}
+            onChange={(e) => set("firstName", e.target.value)}
+            className="input"
+          />
+        </div>
+        <div>
+          <label htmlFor="emp-last-name" className="label">
+            Last name
+          </label>
+          <input
+            id="emp-last-name"
+            required
+            value={form.lastName}
+            onChange={(e) => set("lastName", e.target.value)}
+            className="input"
+          />
+        </div>
+        <div>
+          <label htmlFor="emp-email" className="label">
+            Work email
+          </label>
+          <input
+            id="emp-email"
+            required
+            type="email"
+            placeholder="name@company.com"
+            value={form.email}
+            onChange={(e) => set("email", e.target.value)}
+            className="input"
+          />
+        </div>
+        <div>
+          <label htmlFor="emp-designation" className="label">
+            Designation <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input
+            id="emp-designation"
+            placeholder="e.g. Software Engineer"
+            value={form.designation}
+            onChange={(e) => set("designation", e.target.value)}
+            className="input"
+          />
+        </div>
+        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {access && <AccessNotice result={access} kind="created" />}
+        <div className="sm:col-span-2">
+          <Button type="submit" icon={UserPlus} loading={submitting}>
+            Create employee
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

@@ -5,6 +5,8 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../middleware/requirePermission";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
+import { assertCanDecide } from "../../utils/tenant";
+import { notifyLoanRequested, notifyLoanDecided } from "../../utils/notifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -43,9 +45,9 @@ router.get("/", requirePermission(PERMISSIONS.LOAN_MANAGE), async (req, res) => 
 });
 
 const createSchema = z.object({
-  amount: z.number().positive(),
-  emiMonths: z.number().int().min(1).max(60),
-  reason: z.string().optional(),
+  amount: z.number().finite().positive().max(10_000_000),
+  emiMonths: z.number().int().min(1).max(120),
+  reason: z.string().trim().max(5000).optional(),
 });
 
 router.post("/", async (req, res) => {
@@ -58,10 +60,11 @@ router.post("/", async (req, res) => {
   const loan = await prisma.loanRequest.create({
     data: { organizationId: req.user!.organizationId, employeeId, ...parsed.data },
   });
+  void notifyLoanRequested(loan.id);
   return res.status(201).json(loan);
 });
 
-const decisionSchema = z.object({ decisionNote: z.string().optional() });
+const decisionSchema = z.object({ decisionNote: z.string().trim().max(5000).optional() });
 
 async function decide(req: Request, res: Response, approve: boolean) {
   const parsed = decisionSchema.safeParse(req.body ?? {});
@@ -74,23 +77,29 @@ async function decide(req: Request, res: Response, approve: boolean) {
   if (!loan) return res.status(404).json({ error: "Loan request not found" });
   if (loan.status !== "PENDING") return res.status(409).json({ error: "Loan has already been decided" });
 
-  const canManageAll = req.user!.permissions.includes(PERMISSIONS.LOAN_MANAGE);
-  const isDirectManager = loan.employee.managerId === req.user!.employeeId;
-  if (!canManageAll && !isDirectManager) {
-    return res.status(403).json({ error: "Not authorized to decide this loan request" });
-  }
+  await assertCanDecide(
+    req,
+    { employeeId: loan.employeeId, managerId: loan.employee.managerId },
+    PERMISSIONS.LOAN_MANAGE,
+    "Not authorized to decide this loan request",
+  );
 
   const monthlyDeduction = Math.round((loan.amount / loan.emiMonths) * 100) / 100;
-  const updated = await prisma.loanRequest.update({
-    where: { id: loan.id },
-    data: {
-      status: approve ? "ACTIVE" : "REJECTED",
-      approverId: req.user!.employeeId,
-      decisionNote: parsed.data.decisionNote,
-      decidedAt: new Date(),
-      ...(approve ? { monthlyDeduction, remainingAmount: loan.amount } : {}),
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.loanRequest.updateMany({
+      where: { id: loan.id, organizationId: req.user!.organizationId, status: "PENDING" },
+      data: {
+        status: approve ? "ACTIVE" : "REJECTED",
+        approverId: req.user!.employeeId,
+        decisionNote: parsed.data.decisionNote,
+        decidedAt: new Date(),
+        ...(approve ? { monthlyDeduction, remainingAmount: loan.amount } : {}),
+      },
+    });
+    if (!count) throw new HttpError(409, "Loan has already been decided");
+    return tx.loanRequest.findUniqueOrThrow({ where: { id: loan.id } });
   });
+  void notifyLoanDecided(updated.id);
   return res.json(updated);
 }
 

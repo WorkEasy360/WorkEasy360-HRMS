@@ -4,7 +4,9 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
+import { prisma } from "./config/prisma";
 import { errorHandler } from "./middleware/errorHandler";
+import { rateLimit } from "./middleware/rateLimit";
 import announcementsRoutes from "./modules/announcements/announcements.routes";
 import assetsRoutes from "./modules/assets/assets.routes";
 import attendanceRoutes from "./modules/attendance/attendance.routes";
@@ -34,10 +36,39 @@ import { seedPermissions } from "./utils/seedPermissions";
 
 const app = express();
 
+const isProduction = process.env.NODE_ENV === "production";
+
+// Behind a reverse proxy, set TRUST_PROXY (e.g. "1") so rate limits see the real client IP.
+if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
+app.disable("x-powered-by");
+
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN ?? "http://localhost:3000", credentials: true }));
-app.use(express.json());
-app.use(morgan("dev"));
+// CORS_ORIGIN may list several origins separated by commas (e.g. the app domain and a staging domain).
+const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+app.use(cors({ origin: corsOrigins, maxAge: 600 }));
+app.use(express.json({ limit: "100kb" }));
+app.use(morgan(isProduction ? "combined" : "dev"));
+
+// Brute-force protection for sign-in style endpoints, plus a generous ceiling for the rest of the API.
+const authLimiter = rateLimit({ windowMs: 60_000, max: 10, message: "Too many attempts. Please wait a minute and try again." });
+const registerLimiter = rateLimit({ windowMs: 60 * 60_000, max: 5, message: "Too many sign-ups from this network. Try again later." });
+app.use(
+  [
+    "/api/auth/login",
+    "/api/auth/2fa/login-verify",
+    "/api/auth/change-password",
+    "/api/auth/2fa/disable",
+    "/api/auth/forgot-password",
+    "/api/auth/password-token",
+    "/api/auth/reset-password",
+  ],
+  authLimiter,
+);
+app.use("/api/auth/register", registerLimiter);
+app.use("/api", rateLimit({ windowMs: 60_000, max: 600, message: "Too many requests. Please slow down." }));
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
@@ -67,14 +98,26 @@ app.use("/api/expenses", expensesRoutes);
 app.use("/api/assets", assetsRoutes);
 app.use("/api/loans", loansRoutes);
 
+app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
 app.use(errorHandler);
 
 const port = Number(process.env.PORT ?? 4000);
 seedPermissions()
   .then(() => {
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
       console.log(`WorkEasy360 API listening on port ${port}`);
     });
+
+    // ECS/Beanstalk send SIGTERM before replacing a task: finish in-flight requests, then close DB connections.
+    const shutdown = (signal: string) => {
+      console.log(`${signal} received, shutting down`);
+      server.close(() => {
+        prisma.$disconnect().finally(() => process.exit(0));
+      });
+      setTimeout(() => process.exit(1), 10_000).unref();
+    };
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
   })
   .catch((err) => {
     console.error("Failed to seed permission catalog", err);

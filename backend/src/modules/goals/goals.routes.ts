@@ -5,6 +5,7 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../middleware/requirePermission";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
+import { assertInOrg } from "../../utils/tenant";
 
 const router = Router();
 router.use(requireAuth);
@@ -28,8 +29,8 @@ router.get("/", requirePermission(PERMISSIONS.EMPLOYEE_READ), async (req, res) =
 });
 
 const createSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(5000).optional(),
   dueDate: z.coerce.date().optional(),
   cycleId: z.string().uuid().optional(),
 });
@@ -40,6 +41,7 @@ router.post("/", async (req, res) => {
 
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  await assertInOrg("reviewCycle", parsed.data.cycleId, req.user!.organizationId, "Review cycle");
 
   const goal = await prisma.goal.create({
     data: { organizationId: req.user!.organizationId, employeeId, ...parsed.data },
@@ -50,8 +52,8 @@ router.post("/", async (req, res) => {
 const updateSchema = z.object({
   status: z.enum(["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]).optional(),
   progress: z.number().int().min(0).max(100).optional(),
-  title: z.string().min(1).optional(),
-  description: z.string().optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(5000).optional(),
   dueDate: z.coerce.date().optional(),
 });
 

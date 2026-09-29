@@ -30,7 +30,7 @@ router.get("/permissions", requirePermission(PERMISSIONS.ROLE_MANAGE), async (_r
 });
 
 const createSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().trim().min(2).max(200),
   permissions: z.array(z.enum(ALL_PERMISSIONS as [string, ...string[]])),
 });
 

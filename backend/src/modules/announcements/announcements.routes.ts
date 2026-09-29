@@ -5,6 +5,7 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../middleware/requirePermission";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
+import { notifyAnnouncement } from "../../utils/notifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -18,7 +19,10 @@ router.get("/", requirePermission(PERMISSIONS.ANNOUNCEMENT_READ), async (req, re
   return res.json(announcements);
 });
 
-const createSchema = z.object({ title: z.string().min(1), body: z.string().min(1) });
+const createSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(5000),
+});
 
 router.post("/", requirePermission(PERMISSIONS.ANNOUNCEMENT_MANAGE), async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
@@ -36,6 +40,7 @@ router.post("/", requirePermission(PERMISSIONS.ANNOUNCEMENT_MANAGE), async (req,
       ...parsed.data,
     },
   });
+  void notifyAnnouncement(announcement.id);
   return res.status(201).json(announcement);
 });
 

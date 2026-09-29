@@ -6,6 +6,7 @@ import { requirePermission } from "../../middleware/requirePermission";
 import { writeAuditLog } from "../../utils/audit";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
+import { notifyPayslipsReady } from "../../utils/notifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -79,6 +80,14 @@ router.post("/:id/process", requirePermission(PERMISSIONS.PAYROLL_MANAGE), async
   const employees = await prisma.employee.findMany({ where: { organizationId, status: "ACTIVE" } });
 
   const { payslips, processedRun } = await prisma.$transaction(async (tx) => {
+    // Claim the run first with a conditional update: a concurrent /process call
+    // matches zero rows and aborts before any loan balances are touched.
+    const { count } = await tx.payrollRun.updateMany({
+      where: { id: run.id, organizationId, status: { not: "PROCESSED" } },
+      data: { status: "PROCESSED", processedAt: new Date() },
+    });
+    if (!count) throw new HttpError(409, "This payroll run was already processed");
+
     const created = [];
     for (const employee of employees) {
       const compensation = await tx.compensationRecord.findFirst({
@@ -94,10 +103,16 @@ router.post("/:id/process", requirePermission(PERMISSIONS.PAYROLL_MANAGE), async
       const activeLoans = await tx.loanRequest.findMany({
         where: { employeeId: employee.id, status: "ACTIVE" },
       });
+      // Loan EMIs are capped by what's left after statutory deductions so net pay never goes negative;
+      // any shortfall simply stays on the loan's remaining balance.
       let loanDeduction = 0;
+      let payable = Math.max(0, Math.round((grossPay - statutoryDeduction) * 100) / 100);
       for (const loan of activeLoans) {
-        const installment = Math.min(loan.monthlyDeduction ?? 0, loan.remainingAmount ?? 0);
+        const installment = Math.round(
+          Math.min(loan.monthlyDeduction ?? 0, loan.remainingAmount ?? 0, payable) * 100,
+        ) / 100;
         if (installment <= 0) continue;
+        payable = Math.round((payable - installment) * 100) / 100;
         loanDeduction += installment;
         const remaining = Math.round(((loan.remainingAmount ?? 0) - installment) * 100) / 100;
         await tx.loanRequest.update({
@@ -107,7 +122,7 @@ router.post("/:id/process", requirePermission(PERMISSIONS.PAYROLL_MANAGE), async
       }
 
       const deductions = Math.round((statutoryDeduction + loanDeduction) * 100) / 100;
-      const netPay = Math.round((grossPay - deductions) * 100) / 100;
+      const netPay = Math.max(0, Math.round((grossPay - deductions) * 100) / 100);
 
       const payslip = await tx.payslip.upsert({
         where: { payrollRunId_employeeId: { payrollRunId: run.id, employeeId: employee.id } },
@@ -120,10 +135,7 @@ router.post("/:id/process", requirePermission(PERMISSIONS.PAYROLL_MANAGE), async
       });
     }
 
-    const processedRun = await tx.payrollRun.update({
-      where: { id: run.id },
-      data: { status: "PROCESSED", processedAt: new Date() },
-    });
+    const processedRun = await tx.payrollRun.findUniqueOrThrow({ where: { id: run.id } });
     return { payslips: created, processedRun };
   });
 
@@ -136,6 +148,7 @@ router.post("/:id/process", requirePermission(PERMISSIONS.PAYROLL_MANAGE), async
     after: { month: run.month, year: run.year, payslipCount: payslips.length },
   });
 
+  void notifyPayslipsReady(processedRun.id);
   return res.json({ run: processedRun, payslips });
 });
 

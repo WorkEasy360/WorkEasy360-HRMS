@@ -1,21 +1,30 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { Megaphone } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Announcement } from "@/lib/types";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { errorMessage, useFeedback } from "@/components/feedback";
+import { formatDate } from "@/components/format";
 
 export default function AnnouncementsPage() {
   const { hasPermission } = useAuth();
+  const { toast } = useFeedback();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await apiFetch<Announcement[]>("/announcements");
       setAnnouncements(data);
+    } catch (err) {
+      setLoadError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -30,41 +39,71 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Announcements</h1>
-        {canManage && (
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            {showForm ? "Cancel" : "New announcement"}
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Announcements"
+        description="Company news and updates shared with everyone in your organization."
+        actions={
+          canManage && (
+            <Button
+              variant={showForm ? "secondary" : "primary"}
+              icon={showForm ? undefined : Megaphone}
+              onClick={() => setShowForm((v) => !v)}
+            >
+              {showForm ? "Close form" : "New announcement"}
+            </Button>
+          )
+        }
+      />
+
+      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
       {showForm && (
         <AnnouncementForm
           onCreated={() => {
             setShowForm(false);
+            toast.success("Announcement published");
             load();
           }}
         />
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <LoadingRows rows={3} />
       ) : announcements.length === 0 ? (
-        <p className="text-sm text-slate-500">No announcements yet.</p>
+        <Card>
+          <EmptyState
+            icon={Megaphone}
+            title="No announcements yet"
+            description={
+              canManage
+                ? "Share news, policy updates or celebrations with your whole organization."
+                : "Company news and updates from HR will appear here."
+            }
+            action={
+              canManage &&
+              !showForm && (
+                <Button icon={Megaphone} onClick={() => setShowForm(true)}>
+                  New announcement
+                </Button>
+              )
+            }
+          />
+        </Card>
       ) : (
         <div className="space-y-3">
           {announcements.map((a) => (
-            <div key={a.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="font-medium">{a.title}</h2>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{a.body}</p>
-              <p className="mt-2 text-xs text-slate-400">
-                {a.author.firstName} {a.author.lastName} · {new Date(a.publishedAt).toLocaleDateString()}
+            <Card key={a.id} className="p-4 sm:p-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h2 className="font-semibold text-slate-900">{a.title}</h2>
+                <time dateTime={a.publishedAt} className="text-xs text-slate-400">
+                  {formatDate(a.publishedAt)}
+                </time>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-600">{a.body}</p>
+              <p className="mt-3 text-xs text-slate-400">
+                Posted by {a.author.firstName} {a.author.lastName}
               </p>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -93,30 +132,42 @@ function AnnouncementForm({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <input
-        required
-        placeholder="Title"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-      />
-      <textarea
-        required
-        placeholder="Announcement text"
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        rows={4}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-      />
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-      >
-        {submitting ? "Publishing…" : "Publish"}
-      </button>
-    </form>
+    <Card className="p-4">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label htmlFor="announcement-title" className="label">
+            Title
+          </label>
+          <input
+            id="announcement-title"
+            required
+            placeholder="e.g. Office closed on Friday"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="input"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label htmlFor="announcement-body" className="label">
+            Message
+          </label>
+          <textarea
+            id="announcement-body"
+            required
+            placeholder="Announcement text"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={4}
+            className="input"
+          />
+        </div>
+        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        <div className="sm:col-span-2">
+          <Button type="submit" loading={submitting}>
+            Publish
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }
