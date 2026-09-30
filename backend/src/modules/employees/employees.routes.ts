@@ -18,6 +18,18 @@ import { createPasswordToken, HR_RESET_TTL_MS } from "../../utils/passwordTokens
 const router = Router();
 router.use(requireAuth);
 
+// Personal details are private: only the employee themselves and HR (employee:write) see them.
+const PERSONAL_FIELDS = ["dateOfBirth", "personalEmail", "address", "emergencyContactName", "emergencyContactPhone"] as const;
+
+function withoutPersonal<T extends object>(employee: T): T {
+  const copy = { ...employee } as Record<string, unknown>;
+  for (const field of PERSONAL_FIELDS) delete copy[field];
+  return copy as T;
+}
+
+const optionalText = (max: number) =>
+  z.string().trim().max(max).transform((v) => (v === "" ? null : v)).nullable().optional();
+
 // Employee Directory (People > Employee Directory)
 router.get("/", requirePermission(PERMISSIONS.EMPLOYEE_READ), async (req, res) => {
   const { departmentId, search } = req.query as { departmentId?: string; search?: string };
@@ -39,7 +51,7 @@ router.get("/", requirePermission(PERMISSIONS.EMPLOYEE_READ), async (req, res) =
     include: { department: true, user: { select: { email: true } } },
     orderBy: { firstName: "asc" },
   });
-  return res.json(employees);
+  return res.json(employees.map(withoutPersonal));
 });
 
 // My Workspace > My Profile
@@ -67,7 +79,44 @@ router.get("/:id", async (req, res) => {
   if (!employee) {
     return res.status(404).json({ error: "Employee not found" });
   }
-  return res.json(employee);
+  const canSeePersonal = isSelf || req.user!.permissions.includes(PERMISSIONS.EMPLOYEE_WRITE);
+  return res.json(canSeePersonal ? employee : withoutPersonal(employee));
+});
+
+// My Workspace > My Profile: employees keep their own contact and personal details up to date.
+const selfUpdateSchema = z.object({
+  phone: optionalText(50),
+  personalEmail: z
+    .union([z.literal(""), z.string().trim().email().max(254)])
+    .transform((v) => (v === "" ? null : v))
+    .nullable()
+    .optional(),
+  dateOfBirth: z
+    .union([z.literal(""), z.coerce.date().refine((d) => d <= new Date(), "Date of birth can't be in the future")])
+    .transform((v) => (v === "" ? null : v))
+    .nullable()
+    .optional(),
+  address: optionalText(500),
+  emergencyContactName: optionalText(200),
+  emergencyContactPhone: optionalText(50),
+});
+
+router.patch("/me", async (req, res) => {
+  const employeeId = req.user!.employeeId;
+  if (!employeeId) {
+    return res.status(404).json({ error: "No employee profile linked to this user" });
+  }
+  const parsed = selfUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const updated = await prisma.employee.update({
+    where: { id: employeeId },
+    data: parsed.data,
+    include: { department: true, manager: true, user: { select: { email: true } } },
+  });
+  return res.json(updated);
 });
 
 const createSchema = z.object({
@@ -95,8 +144,11 @@ router.post("/", requirePermission(PERMISSIONS.EMPLOYEE_WRITE), async (req, res)
 });
 
 const updateSchema = z.object({
-  designation: z.string().trim().max(200).optional(),
-  phone: z.string().trim().max(50).optional(),
+  firstName: z.string().trim().min(1).max(200).optional(),
+  lastName: z.string().trim().min(1).max(200).optional(),
+  designation: optionalText(200),
+  phone: optionalText(50),
+  dateOfJoining: z.coerce.date().nullable().optional(),
   departmentId: z.string().uuid().nullable().optional(),
   managerId: z.string().uuid().nullable().optional(),
   status: z.enum(["ACTIVE", "ONBOARDING", "ON_LEAVE", "EXITED"]).optional(),
@@ -128,6 +180,18 @@ router.patch("/:id", requirePermission(PERMISSIONS.EMPLOYEE_WRITE), async (req, 
       ...parsed.data,
       ...(parsed.data.status === "EXITED" && !employee.exitDate ? { exitDate: new Date() } : {}),
     },
+    include: { department: true, manager: true, user: { select: { email: true } } },
+  });
+
+  const changed = Object.keys(parsed.data) as (keyof typeof parsed.data)[];
+  await writeAuditLog({
+    organizationId,
+    actorUserId: req.user!.sub,
+    action: "employee.update",
+    entityType: "Employee",
+    entityId: employee.id,
+    before: Object.fromEntries(changed.map((k) => [k, employee[k]])),
+    after: Object.fromEntries(changed.map((k) => [k, updated[k]])),
   });
   return res.json(updated);
 });

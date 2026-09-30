@@ -10,6 +10,19 @@ export function formatDate(value: string | number | Date | null | undefined): st
   return d.toLocaleDateString(undefined, DATE_FORMAT);
 }
 
+/** For calendar dates stored without a time (e.g. date of birth): read in UTC so no timezone shifts the day. */
+export function formatCalendarDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { ...DATE_FORMAT, timeZone: "UTC" });
+}
+
+/** "2026-03-12" for an <input type="date">, or "" when empty. */
+export function toDateInput(value: string | null | undefined): string {
+  return value ? value.slice(0, 10) : "";
+}
+
 /** "12 Mar 2026, 09:30" */
 export function formatDateTime(value: string | number | Date | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";

@@ -1,12 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ListChecks } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { OnboardingTask } from "@/lib/types";
 import { Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate, localIsoDate } from "@/components/format";
+
+// Default checklist items that can be done inside the app point to the page where they happen.
+const TASK_LINKS: Record<string, { href: string; label: string }> = {
+  "Complete personal profile": { href: "/my-profile", label: "Open My Profile" },
+};
 
 export default function MyTasksPage() {
   const { toast } = useFeedback();
@@ -108,6 +114,15 @@ export default function MyTasksPage() {
                   <span className={`min-w-0 flex-1 ${task.done ? "text-slate-400 line-through" : "text-slate-900"}`}>
                     {task.title}
                   </span>
+                  {!task.done && TASK_LINKS[task.title] && (
+                    <Link
+                      href={TASK_LINKS[task.title].href}
+                      onClick={(e) => e.stopPropagation()}
+                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
+                    >
+                      {TASK_LINKS[task.title].label}
+                    </Link>
+                  )}
                   {task.dueDate && (
                     <span className={`shrink-0 whitespace-nowrap text-xs ${overdue ? "font-medium text-red-600" : "text-slate-400"}`}>
                       {overdue ? "Overdue · " : "Due "}

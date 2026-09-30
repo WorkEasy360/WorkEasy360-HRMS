@@ -242,6 +242,12 @@ model Employee {
   departmentId   String?
   managerId      String?
   dateOfJoining  DateTime?
+  // Personal details, filled in by the employee (My Profile); visible only to them and HR.
+  dateOfBirth           DateTime? @db.Date
+  personalEmail         String?
+  address               String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
   exitDate       DateTime?      @db.Date
   status         EmployeeStatus @default(ONBOARDING)
   createdAt      DateTime       @default(now())

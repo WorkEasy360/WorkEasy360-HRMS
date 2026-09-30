@@ -26,6 +26,12 @@ export interface Employee {
   dateOfJoining: string | null;
   status: EmployeeStatus;
   user?: { email: string };
+  // Personal details — only returned to the employee themselves and to HR.
+  dateOfBirth?: string | null;
+  personalEmail?: string | null;
+  address?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
 }
 
 export interface CurrentUser {
