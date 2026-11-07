@@ -28,6 +28,7 @@ export {
   StatCard,
   type ValueTone,
 } from "./components/page";
+export { AgentAvatar } from "./components/agent-avatar";
 export { BrandMark, Lockup, PRODUCT_NAME } from "./components/logo";
 export { ThemeToggle, themeScript, type Theme } from "./components/theme-toggle";
 export { CHART_OTHER, CHART_SERIES, color, motion, radius, size, type Tone } from "./tokens";

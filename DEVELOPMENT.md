@@ -55,6 +55,7 @@ To stop everything: `Ctrl+C` in both terminals, then `docker stop workeasy-postg
 
 - `index.ts`: middleware (helmet, CORS, body limit, rate limits), route mounting, `/api/health`, graceful shutdown.
 - `modules/<feature>/<feature>.routes.ts`: one Express router per feature (leave, payroll, recruitment…).
+- `ai/`: **the AI assistant** — providers, the turn loop, and what this product lets it see and do. `modules/assistant/` holds the route, the read-only tools and the confirmable actions. See [docs/04-ai-assistant.md](./docs/04-ai-assistant.md).
 - `middleware/`
   - `auth.ts` (`requireAuth`)
   - `requirePermission.ts`
@@ -78,6 +79,7 @@ To stop everything: `Ctrl+C` in both terminals, then `docker stop workeasy-postg
   - `auth-context.tsx` (`useAuth`, `hasPermission`)
   - `navigation.ts`: **the menu and page permissions, in one place**
   - `use-app-config.ts`: server flags such as email and registration
+- `components/AssistantPanel.tsx`: the AI assistant's button and chat window — see [docs/04-ai-assistant.md](./docs/04-ai-assistant.md)
 - `ui/`: **the WorkEasy360 design system** — see [docs/design-system.md](./docs/design-system.md)
   - `tokens.css`: every `--we-*` colour, size, radius, shadow and motion value, light and dark
   - `admin.css`: the `c-*` component classes (`c-btn-primary`, `c-input`, `c-table`, `c-badge`, `c-menu`…)

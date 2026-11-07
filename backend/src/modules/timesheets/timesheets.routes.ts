@@ -59,7 +59,8 @@ router.get("/", requirePermission(PERMISSIONS.EMPLOYEE_READ), async (req, res) =
   return res.json(entries);
 });
 
-const upsertSchema = z.object({
+// Exported so the AI assistant validates a proposed action with exactly these rules.
+export const upsertSchema = z.object({
   date: z.coerce
     .date()
     .transform(startOfUtcDay)

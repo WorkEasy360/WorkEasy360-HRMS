@@ -143,6 +143,7 @@ model Organization {
   expenseClaims       ExpenseClaim[]
   assets              Asset[]
   loanRequests        LoanRequest[]
+  aiUsageDays         AiUsageDay[]
 
   @@map("organizations")
 }
@@ -231,27 +232,27 @@ model Department {
 }
 
 model Employee {
-  id             String         @id @default(uuid())
-  organizationId String
-  userId         String         @unique
-  employeeCode   String
-  firstName      String
-  lastName       String
-  designation    String?
-  phone          String?
-  departmentId   String?
-  managerId      String?
-  dateOfJoining  DateTime?
+  id                    String         @id @default(uuid())
+  organizationId        String
+  userId                String         @unique
+  employeeCode          String
+  firstName             String
+  lastName              String
+  designation           String?
+  phone                 String?
+  departmentId          String?
+  managerId             String?
+  dateOfJoining         DateTime?
   // Personal details, filled in by the employee (My Profile); visible only to them and HR.
-  dateOfBirth           DateTime? @db.Date
+  dateOfBirth           DateTime?      @db.Date
   personalEmail         String?
   address               String?
   emergencyContactName  String?
   emergencyContactPhone String?
-  exitDate       DateTime?      @db.Date
-  status         EmployeeStatus @default(ONBOARDING)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  exitDate              DateTime?      @db.Date
+  status                EmployeeStatus @default(ONBOARDING)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -743,6 +744,23 @@ model LoanRequest {
   approver     Employee?    @relation("LoanApprover", fields: [approverId], references: [id])
 
   @@map("loan_requests")
+}
+
+/// One row per company per day: how much of the AI assistant's daily allowance
+/// has been used. Counted whether or not the model answered, so a provider
+/// outage cannot be used to bypass the limit.
+model AiUsageDay {
+  id                String   @id @default(uuid())
+  organizationId    String
+  day               DateTime @db.Date
+  assistantMessages Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, day])
+  @@map("ai_usage_days")
 }
 
 model Role {

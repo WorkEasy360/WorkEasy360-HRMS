@@ -36,7 +36,8 @@ router.get("/", requirePermission(PERMISSIONS.HELPDESK_MANAGE), async (req, res)
   return res.json(tickets);
 });
 
-const createSchema = z.object({
+// Exported so the AI assistant validates a proposed action with exactly these rules.
+export const createSchema = z.object({
   category: z.string().trim().min(1).max(200),
   subject: z.string().trim().min(1).max(200),
   description: z.string().trim().min(1).max(5000),

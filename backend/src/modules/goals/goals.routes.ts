@@ -49,7 +49,8 @@ router.post("/", async (req, res) => {
   return res.status(201).json(goal);
 });
 
-const updateSchema = z.object({
+// Exported so the AI assistant validates a proposed action with exactly these rules.
+export const updateSchema = z.object({
   status: z.enum(["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]).optional(),
   progress: z.number().int().min(0).max(100).optional(),
   title: z.string().trim().min(1).max(200).optional(),

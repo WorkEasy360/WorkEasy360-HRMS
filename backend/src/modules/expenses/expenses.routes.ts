@@ -44,7 +44,8 @@ router.get("/", requirePermission(PERMISSIONS.EXPENSE_MANAGE), async (req, res) 
   return res.json(claims);
 });
 
-const createSchema = z.object({
+// Exported so the AI assistant validates a proposed action with exactly these rules.
+export const createSchema = z.object({
   category: z.string().trim().min(1).max(200),
   amount: z.number().finite().positive().max(1_000_000),
   expenseDate: z.coerce.date(),

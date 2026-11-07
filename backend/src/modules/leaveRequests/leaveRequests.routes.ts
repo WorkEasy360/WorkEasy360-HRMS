@@ -46,7 +46,8 @@ router.get("/pending-approvals", async (req, res) => {
   return res.json(requests);
 });
 
-const createSchema = z
+// Exported so the AI assistant validates a proposed action with exactly these rules.
+export const createSchema = z
   .object({
     leaveTypeId: z.string().uuid(),
     startDate: z.coerce.date(),

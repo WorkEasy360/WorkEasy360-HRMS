@@ -23,7 +23,8 @@ router.get("/postings", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE), async
   return res.json(postings);
 });
 
-const createPostingSchema = z.object({
+// Exported so the AI assistant validates a proposed action with exactly these rules.
+export const createPostingSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().min(1).max(5000),
   departmentId: z.string().uuid().optional(),
@@ -91,7 +92,8 @@ router.post("/candidates", requirePermission(PERMISSIONS.RECRUITMENT_MANAGE), as
   return res.status(201).json(candidate);
 });
 
-const updateCandidateSchema = z.object({
+// Exported so the AI assistant validates a proposed action with exactly these rules.
+export const updateCandidateSchema = z.object({
   // HIRED is intentionally absent: hiring must go through POST /candidates/:id/hire.
   stage: z.enum(["APPLIED", "SCREENING", "INTERVIEW", "OFFER", "REJECTED"]).optional(),
   notes: z.string().trim().max(5000).optional(),

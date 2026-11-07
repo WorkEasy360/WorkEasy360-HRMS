@@ -119,7 +119,8 @@ router.patch("/me", async (req, res) => {
   return res.json(updated);
 });
 
-const createSchema = z.object({
+// Exported so the AI assistant validates a proposed action with exactly these rules.
+export const createSchema = z.object({
   email: z.string().trim().email().max(254),
   firstName: z.string().trim().min(1).max(200),
   lastName: z.string().trim().min(1).max(200),

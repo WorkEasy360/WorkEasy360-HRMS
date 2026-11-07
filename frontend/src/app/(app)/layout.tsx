@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Bell, CheckSquare, ChevronDown, Loader2, LogOut, Menu, Search, ShieldCheck, ShieldOff, User, X } from "lucide-react";
+import { AssistantPanel } from "@/components/AssistantPanel";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useAuth } from "@/lib/auth-context";
 import { canSee, findNavItem, visibleGroups, type NavItem } from "@/lib/navigation";
@@ -260,6 +261,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+      <AssistantPanel />
     </div>
   );
 }

@@ -1018,41 +1018,206 @@
   .c-fab {
     position: fixed;
     right: var(--we-space-6);
+    /* A page with a sticky save bar sets data-save-bar on <body> so the
+       launcher never covers Save. */
     bottom: var(--we-space-6);
+    z-index: 50;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: var(--we-space-12);
-    height: var(--we-space-12);
+    width: var(--we-size-fab);
+    height: var(--we-size-fab);
+    padding: 0;
     border: none;
     border-radius: var(--we-radius-full);
     background-color: var(--we-primary);
     color: var(--we-on-primary);
-    box-shadow: var(--we-shadow-lg);
+    /* A soft accent ring around the navy disc, over the page's own shadow. */
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--we-accent) 50%, transparent),
+      var(--we-shadow-lg);
     cursor: pointer;
+    transition:
+      background-color var(--we-motion-fast) var(--we-motion-ease),
+      box-shadow var(--we-motion-fast) var(--we-motion-ease);
   }
+  .c-fab:hover {
+    background-color: var(--we-primary-hover);
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--we-accent) 50%, transparent),
+      var(--we-shadow-lg);
+  }
+  /* The assistant's face inside the launcher. It carries its own size because
+     the avatar's default `size-icon` is a Tailwind utility, and utilities sit
+     in a later layer than this one — a `.c-fab > svg` rule would lose to it.
+     49% is the mark's share of the disc in the reference design. */
+  .c-fab-face {
+    width: 49%;
+    height: 49%;
+  }
+  body[data-save-bar="true"] .c-fab {
+    bottom: calc(var(--we-space-6) + var(--we-size-control) + var(--we-space-4));
+  }
+  /* The chat window sits above the launcher, never over it. The offset is the
+     launcher's own height, so changing --we-size-fab moves both together. */
   .c-chatbox {
     position: fixed;
     right: var(--we-space-6);
-    bottom: var(--we-space-6);
+    bottom: calc(var(--we-space-6) + var(--we-size-fab) + var(--we-space-3));
+    z-index: 50;
     display: flex;
     flex-direction: column;
-    width: 22rem;
-    max-height: 70vh;
+    width: 23rem;
+    max-width: calc(100vw - var(--we-space-8));
+    /* A fixed frame: the window is the same size whether it holds one message
+       or twenty, and .c-chatbox-body scrolls inside it. It only shrinks when
+       the viewport is too short to hold it above the launcher. */
+    height: 32rem;
+    max-height: calc(
+      100vh - var(--we-space-6) - var(--we-size-fab) - var(--we-space-3) - var(--we-space-6)
+    );
     overflow: hidden;
     background-color: var(--we-surface);
     border: 1px solid var(--we-border);
     border-radius: var(--we-radius-lg);
     box-shadow: var(--we-shadow-lg);
+    animation: c-fade-in var(--we-motion-drawer) var(--we-motion-ease);
   }
   @media (max-width: 639px) {
+    /* Full screen on phones, with the close button in the header. */
     .c-chatbox {
       inset: 0;
       width: auto;
+      max-width: none;
+      height: auto;
       max-height: none;
       border: none;
       border-radius: 0;
     }
+  }
+
+  /* The assistant's face at header size: the same navy disc, smaller. */
+  .c-agent-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--we-space-6);
+    height: var(--we-space-6);
+    flex-shrink: 0;
+    border-radius: var(--we-radius-full);
+    background-color: var(--we-primary);
+  }
+
+  .c-chatbox-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--we-space-2);
+    padding: var(--we-space-3) var(--we-space-3) var(--we-space-3) var(--we-space-4);
+    border-bottom: 1px solid var(--we-border);
+    font-size: var(--we-font-size-base);
+  }
+  .c-chatbox-body {
+    flex: 1;
+    /* Explicit, so the list scrolls inside the fixed frame instead of pushing
+       the composer out of it. */
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--we-space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--we-space-3);
+  }
+  .c-chatbox-foot {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--we-space-2);
+    padding: var(--we-space-3) var(--we-space-4);
+    border-top: 1px solid var(--we-border);
+  }
+  .c-chat-input {
+    min-height: var(--we-size-control);
+    max-height: 7rem;
+  }
+  .c-chatbox-note {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--we-space-1);
+    padding-bottom: var(--we-space-2);
+    font-size: var(--we-font-size-xs);
+    color: var(--we-text-secondary);
+  }
+
+  .c-chat-welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--we-space-2);
+  }
+  .c-chat-suggestion {
+    padding: var(--we-space-2) var(--we-space-3);
+    border: 1px solid var(--we-border-strong);
+    border-radius: var(--we-radius-md);
+    background-color: var(--we-surface);
+    color: var(--we-text-body);
+    font-size: var(--we-font-size-sm);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color var(--we-motion-fast) var(--we-motion-ease);
+  }
+  .c-chat-suggestion:hover {
+    border-color: var(--we-accent-hover);
+  }
+
+  .c-chat-turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--we-space-1);
+    margin-bottom: var(--we-space-3);
+  }
+  .c-chat-turn[data-role="user"] {
+    align-items: flex-end;
+  }
+  .c-chat-bubble {
+    max-width: 90%;
+    padding: var(--we-space-2) var(--we-space-3);
+    border-radius: var(--we-radius-md);
+    background-color: var(--we-surface-muted);
+    color: var(--we-text-body);
+    font-size: var(--we-font-size-base);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .c-chat-bubble[data-role="user"] {
+    background-color: var(--we-primary);
+    color: var(--we-on-primary);
+  }
+
+  /* The confirmation card: what was checked, what happens, one button. */
+  .c-chat-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--we-space-2);
+    margin-top: var(--we-space-2);
+    padding: var(--we-space-3);
+    background-color: var(--we-surface);
+    border: 1px solid var(--we-border-strong);
+    border-radius: var(--we-radius-md);
+  }
+  .c-chat-card-title {
+    font-size: var(--we-font-size-base);
+    font-weight: var(--we-font-weight-semibold);
+    color: var(--we-text-primary);
+  }
+  .c-chat-card-facts {
+    grid-template-columns: minmax(5rem, auto) 1fr;
+    gap: var(--we-space-1) var(--we-space-3);
+    font-size: var(--we-font-size-sm);
+  }
+  .c-chat-card-effect {
+    font-size: var(--we-font-size-sm);
+    color: var(--we-text-secondary);
   }
 
   /* ======================================================================

@@ -9,6 +9,7 @@ import { errorHandler } from "./middleware/errorHandler";
 import { rateLimit } from "./middleware/rateLimit";
 import announcementsRoutes from "./modules/announcements/announcements.routes";
 import assetsRoutes from "./modules/assets/assets.routes";
+import assistantRoutes from "./modules/assistant/assistant.routes";
 import attendanceRoutes from "./modules/attendance/attendance.routes";
 import auditRoutes from "./modules/audit/audit.routes";
 import authRoutes from "./modules/auth/auth.routes";
@@ -32,6 +33,7 @@ import reportsRoutes from "./modules/reports/reports.routes";
 import rolesRoutes from "./modules/roles/roles.routes";
 import shiftsRoutes from "./modules/shifts/shifts.routes";
 import timesheetsRoutes from "./modules/timesheets/timesheets.routes";
+import { verifyAssistantConfig } from "./ai/config";
 import { seedPermissions } from "./utils/seedPermissions";
 
 const app = express();
@@ -110,6 +112,7 @@ app.use("/api/recruitment", recruitmentRoutes);
 app.use("/api/expenses", expensesRoutes);
 app.use("/api/assets", assetsRoutes);
 app.use("/api/loans", loansRoutes);
+app.use("/api/assistant", assistantRoutes);
 
 app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
 app.use(errorHandler);
@@ -117,6 +120,8 @@ app.use(errorHandler);
 const port = Number(process.env.PORT ?? 4000);
 seedPermissions()
   .then(() => {
+    // Fails the boot, not the first question, when AI_PROVIDER is set without a key.
+    verifyAssistantConfig();
     const server = app.listen(port, () => {
       console.log(`WorkEasy360 API listening on port ${port}`);
     });
