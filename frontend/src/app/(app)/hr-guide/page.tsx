@@ -6,7 +6,7 @@ import { BookOpen, ChevronRight, FilePlus2 } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { HrGuideArticle } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate } from "@/components/format";
 
@@ -82,7 +82,7 @@ export default function HrGuidePage() {
             action={
               canManage &&
               !showForm && (
-                <Button icon={FilePlus2} onClick={() => setShowForm(true)}>
+                <Button variant="secondary" icon={FilePlus2} onClick={() => setShowForm(true)}>
                   New article
                 </Button>
               )
@@ -95,18 +95,18 @@ export default function HrGuidePage() {
             <Link
               key={a.id}
               href={`/hr-guide/${a.id}`}
-              className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-300 hover:shadow-md"
+              className="c-card group flex items-center gap-3 p-4 transition hover:border-accent hover:shadow-md"
             >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-soft text-link">
                 <BookOpen className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-slate-900">{a.title}</p>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="truncate font-medium text-heading">{a.title}</p>
+                <p className="mt-0.5 text-xs text-secondary">
                   {a.category ? `${a.category} · ` : ""}Updated {formatDate(a.updatedAt)}
                 </p>
               </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:text-blue-500" />
+              <ChevronRight className="h-4 w-4 shrink-0 text-secondary transition group-hover:text-accent-strong" />
             </Link>
           ))}
         </div>
@@ -140,25 +140,25 @@ function ArticleForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="article-title" className="label">
+          <label htmlFor="article-title" className="c-label">
             Title
           </label>
-          <input id="article-title" required value={title} onChange={(e) => setTitle(e.target.value)} className="input" />
+          <input id="article-title" required value={title} onChange={(e) => setTitle(e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="article-category" className="label">
-            Category <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="article-category" className="c-label">
+            Category <span className="font-normal text-secondary">(optional)</span>
           </label>
           <input
             id="article-category"
             placeholder="e.g. Leave, Payroll"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor="article-body" className="label">
+          <label htmlFor="article-body" className="c-label">
             Content
           </label>
           <textarea
@@ -168,10 +168,10 @@ function ArticleForm({ onCreated }: { onCreated: () => void }) {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={6}
-            className="input"
+            className="c-textarea"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Publish article

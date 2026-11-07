@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { CalendarDays, Plus, Target } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Goal } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate } from "@/components/format";
 
@@ -78,10 +78,10 @@ export default function GoalsPage() {
       )}
 
       {!loading && goals.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <SummaryTile label="In progress" value={String(inProgress)} tone="text-blue-600" />
-          <SummaryTile label="Completed" value={String(completed)} tone="text-emerald-600" />
-          <SummaryTile label="Avg. progress" value={`${avgProgress}%`} tone="text-slate-900" />
+        <div className="c-stats">
+          <StatCard label="In progress" value={String(inProgress)} valueTone="info" />
+          <StatCard label="Completed" value={String(completed)} valueTone="success" />
+          <StatCard label="Avg. progress" value={`${avgProgress}%`} />
         </div>
       )}
 
@@ -95,7 +95,7 @@ export default function GoalsPage() {
             description="Add a goal to focus your work and track progress towards it over time."
             action={
               !showForm && (
-                <Button icon={Plus} onClick={() => setShowForm(true)}>
+                <Button variant="secondary" icon={Plus} onClick={() => setShowForm(true)}>
                   New goal
                 </Button>
               )
@@ -108,9 +108,9 @@ export default function GoalsPage() {
             <Card key={g.id} className="p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-medium text-slate-900">{g.title}</p>
+                  <p className="font-medium text-heading">{g.title}</p>
                   {g.dueDate && (
-                    <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500">
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-secondary">
                       <CalendarDays className="h-3.5 w-3.5" />
                       Due {formatDate(g.dueDate)}
                     </p>
@@ -123,16 +123,16 @@ export default function GoalsPage() {
                   id={`goal-status-${g.id}`}
                   value={g.status}
                   onChange={(e) => updateGoal(g.id, { status: e.target.value as Goal["status"] })}
-                  className="input w-auto py-1 text-xs"
+                  className="c-select w-auto py-1 text-xs"
                 >
                   <option value="NOT_STARTED">Not started</option>
                   <option value="IN_PROGRESS">In progress</option>
                   <option value="COMPLETED">Completed</option>
                 </select>
               </div>
-              {g.description && <p className="mt-2 text-sm text-slate-600">{g.description}</p>}
+              {g.description && <p className="mt-2 text-sm text-body">{g.description}</p>}
               <div className="mt-3 flex items-center gap-3">
-                <label htmlFor={`goal-progress-${g.id}`} className="text-xs font-medium text-slate-500">
+                <label htmlFor={`goal-progress-${g.id}`} className="text-xs font-medium text-secondary">
                   Progress
                 </label>
                 <input
@@ -142,9 +142,9 @@ export default function GoalsPage() {
                   max={100}
                   value={g.progress}
                   onChange={(e) => updateGoal(g.id, { progress: Number(e.target.value) })}
-                  className="flex-1 accent-blue-600"
+                  className="c-range flex-1"
                 />
-                <span className="w-10 text-right text-xs font-medium tabular-nums text-slate-700">{g.progress}%</span>
+                <span className="w-10 text-right text-xs font-medium tabular-nums text-body">{g.progress}%</span>
               </div>
             </Card>
           ))}
@@ -154,14 +154,6 @@ export default function GoalsPage() {
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: string; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function GoalForm({ onCreated }: { onCreated: () => void }) {
   const [title, setTitle] = useState("");
@@ -188,24 +180,24 @@ function GoalForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="goal-title" className="label">
+          <label htmlFor="goal-title" className="c-label">
             Goal title
           </label>
-          <input id="goal-title" required value={title} onChange={(e) => setTitle(e.target.value)} className="input" placeholder="e.g. Ship the new onboarding flow" />
+          <input id="goal-title" required value={title} onChange={(e) => setTitle(e.target.value)} className="c-input" placeholder="e.g. Ship the new onboarding flow" />
         </div>
         <div>
-          <label htmlFor="goal-due" className="label">
-            Due date <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="goal-due" className="c-label">
+            Due date <span className="font-normal text-secondary">(optional)</span>
           </label>
-          <input id="goal-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input" />
+          <input id="goal-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="c-input" />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor="goal-description" className="label">
-            Description <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="goal-description" className="c-label">
+            Description <span className="font-normal text-secondary">(optional)</span>
           </label>
-          <textarea id="goal-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="input" />
+          <textarea id="goal-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="c-textarea" />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Add goal

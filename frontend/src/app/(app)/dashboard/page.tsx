@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, CalendarDays, CheckSquare, Clock, LogIn, LogOut, Megaphone, ShieldAlert, Sparkles } from "lucide-react";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate, formatTime, localIsoDate } from "@/components/format";
-import { Button, Card, EmptyState, Skeleton } from "@/components/ui";
+import { Button, Card, EmptyState, PageHeader, Skeleton } from "@/ui";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { canSee, NAV_GROUPS, type NavItem } from "@/lib/navigation";
@@ -50,21 +50,16 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm text-slate-500">{new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</p>
-        <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">
-          {greeting()}
-          {user?.employee ? `, ${user.employee.firstName}` : ""}
-        </h1>
-      </div>
+      <PageHeader
+        eyebrow={new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+        title={`${greeting()}${user?.employee ? `, ${user.employee.firstName}` : ""}`}
+      />
 
       {user && !user.totpEnabled && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
-          <div className="flex items-center gap-3 text-sm text-blue-900">
-            <ShieldAlert className="h-5 w-5 shrink-0 text-blue-600" />
-            Protect your account with two-factor authentication. It takes about a minute.
-          </div>
-          <Link href="/settings/security" className="text-sm font-medium text-blue-700 hover:underline">
+        <div className="c-alert" data-tone="info">
+          <ShieldAlert strokeWidth={2} aria-hidden />
+          <span className="flex-1">Protect your account with two-factor authentication. It takes about a minute.</span>
+          <Link href="/settings/security" className="c-link shrink-0">
             Turn on 2FA
           </Link>
         </div>
@@ -74,7 +69,7 @@ export default function DashboardPage() {
         {user?.employee ? <TodayCard /> : null}
 
         <Card className="flex flex-col p-5">
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+          <div className="flex items-center gap-2 text-sm font-medium text-secondary">
             <CalendarDays className="h-4 w-4" /> Time off
           </div>
           {leave === null ? (
@@ -85,29 +80,29 @@ export default function DashboardPage() {
                 {formatDate(upcomingLeave.startDate)}
                 {upcomingLeave.endDate !== upcomingLeave.startDate && ` – ${formatDate(upcomingLeave.endDate)}`}
               </p>
-              <p className="text-sm text-slate-500">Next approved {upcomingLeave.leaveType.name.toLowerCase()}</p>
+              <p className="text-sm text-secondary">Next approved {upcomingLeave.leaveType.name.toLowerCase()}</p>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-slate-500">No upcoming leave booked.</p>
+            <p className="mt-3 text-sm text-secondary">No upcoming leave booked.</p>
           )}
           {pendingLeave > 0 && (
-            <p className="mt-2 text-xs text-amber-700">
+            <p className="mt-2 text-xs text-warning-text">
               {pendingLeave} request{pendingLeave === 1 ? "" : "s"} awaiting approval
             </p>
           )}
-          <Link href="/my-leave" className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-medium text-blue-600 hover:underline">
+          <Link href="/my-leave" className="mt-auto inline-flex items-center gap-1 pt-4 text-sm c-link">
             Request leave <ArrowRight className="h-4 w-4" />
           </Link>
         </Card>
 
         <Card className="flex flex-col p-5">
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+          <div className="flex items-center gap-2 text-sm font-medium text-secondary">
             <CheckSquare className="h-4 w-4" /> Waiting on you
           </div>
           {pending.total > 0 ? (
             <div className="mt-3">
-              <p className="text-3xl font-semibold">{pending.total}</p>
-              <p className="text-sm text-slate-500">
+              <p className="c-stat-value">{pending.total}</p>
+              <p className="text-sm text-secondary">
                 {[
                   pending.leave && `${pending.leave} leave`,
                   pending.timesheets && `${pending.timesheets} timesheet`,
@@ -119,29 +114,29 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : (
-            <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
-              <Sparkles className="h-4 w-4 text-emerald-500" /> You&apos;re all caught up.
+            <div className="mt-3 flex items-center gap-2 text-sm text-secondary">
+              <Sparkles className="h-4 w-4 text-success" /> You&apos;re all caught up.
             </div>
           )}
-          <Link href="/approvals" className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-medium text-blue-600 hover:underline">
+          <Link href="/approvals" className="mt-auto inline-flex items-center gap-1 pt-4 text-sm c-link">
             Open approvals <ArrowRight className="h-4 w-4" />
           </Link>
         </Card>
       </div>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">Quick actions</h2>
+        <h2 className="c-section-title mb-3">Quick actions</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {quick.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="group flex flex-col items-start gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-300 hover:shadow-md"
+              className="c-card group flex flex-col items-start gap-2 p-4 transition hover:border-accent hover:shadow-md"
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white">
+              <span className="flex size-9 items-center justify-center rounded-md bg-accent-soft text-accent-strong group-hover:bg-accent group-hover:text-on-accent">
                 <item.icon className="h-5 w-5" />
               </span>
-              <span className="text-sm font-medium text-slate-900">{item.label.replace(/^My /, "")}</span>
+              <span className="text-sm font-medium text-heading">{item.label.replace(/^My /, "")}</span>
             </Link>
           ))}
         </div>
@@ -150,8 +145,8 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <section className="lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">Announcements</h2>
-            <Link href="/announcements" className="text-xs font-medium text-blue-600 hover:underline">
+            <h2 className="c-section-title">Announcements</h2>
+            <Link href="/announcements" className="text-xs c-link">
               View all
             </Link>
           </div>
@@ -168,10 +163,10 @@ export default function DashboardPage() {
             <div className="space-y-2">
               {announcements.map((a) => (
                 <Link key={a.id} href="/announcements" className="block">
-                  <Card className="p-4 transition hover:border-blue-300">
-                    <p className="font-medium text-slate-900">{a.title}</p>
-                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{a.body}</p>
-                    <p className="mt-2 text-xs text-slate-400">
+                  <Card className="p-4 transition hover:border-accent">
+                    <p className="font-medium text-heading">{a.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-body">{a.body}</p>
+                    <p className="mt-2 text-xs text-secondary">
                       {a.author.firstName} {a.author.lastName} · {formatDate(a.publishedAt)}
                     </p>
                   </Card>
@@ -183,16 +178,16 @@ export default function DashboardPage() {
 
         {adminTools.length > 0 && (
           <section>
-            <h2 className="mb-3 text-sm font-semibold text-slate-900">Manage</h2>
-            <Card className="divide-y divide-slate-100">
+            <h2 className="c-section-title mb-3">Manage</h2>
+            <Card className="divide-y divide-line">
               {adminTools.map((item) => (
-                <Link key={item.href} href={item.href} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-slate-50">
-                  <item.icon className="h-4 w-4 text-slate-400" />
+                <Link key={item.href} href={item.href} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted">
+                  <item.icon className="h-4 w-4 text-secondary" />
                   <span className="flex-1">
-                    <span className="font-medium text-slate-900">{item.label}</span>
-                    <span className="block text-xs text-slate-500">{item.description}</span>
+                    <span className="font-medium text-heading">{item.label}</span>
+                    <span className="block text-xs text-secondary">{item.description}</span>
                   </span>
-                  <ArrowRight className="h-4 w-4 text-slate-300" />
+                  <ArrowRight className="h-4 w-4 text-secondary" />
                 </Link>
               ))}
             </Card>
@@ -241,15 +236,11 @@ function TodayCard() {
   return (
     <Card className="flex flex-col p-5">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+        <div className="flex items-center gap-2 text-sm font-medium text-secondary">
           <Clock className="h-4 w-4" /> Today
         </div>
         {record !== undefined && (
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              state === "in" ? "bg-emerald-100 text-emerald-800" : state === "done" ? "bg-slate-100 text-slate-600" : "bg-amber-100 text-amber-800"
-            }`}
-          >
+          <span className="c-badge" data-tone={state === "in" ? "success" : state === "done" ? undefined : "warning"}>
             {state === "in" ? "Checked in" : state === "done" ? "Day complete" : "Not checked in"}
           </span>
         )}
@@ -257,7 +248,7 @@ function TodayCard() {
       {record === undefined ? (
         <Skeleton className="mt-3 h-12 w-full" />
       ) : (
-        <p className="mt-3 text-sm text-slate-600">
+        <p className="mt-3 text-sm text-body">
           {state === "out" && "You haven't checked in yet today."}
           {state === "in" && `In since ${formatTime(record!.checkInAt)}.`}
           {state === "done" && `${formatTime(record!.checkInAt)} – ${formatTime(record!.checkOutAt)}`}
@@ -275,7 +266,7 @@ function TodayCard() {
           </Button>
         )}
         {state === "done" && (
-          <Link href="/my-attendance" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline">
+          <Link href="/my-attendance" className="c-back">
             View attendance <ArrowRight className="h-4 w-4" />
           </Link>
         )}

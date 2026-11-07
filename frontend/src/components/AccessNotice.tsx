@@ -15,20 +15,20 @@ export function AccessNotice({ result, email, kind }: { result: AccessResult; em
         ? `We've emailed a password reset link${to ? ` to ${to}` : ""}. Their old password no longer works.`
         : `${kind === "hired" ? "Hired! " : "Employee created. "}We've emailed a welcome link${to ? ` to ${to}` : ""} so they can set their own password.`;
     return (
-      <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 sm:col-span-2">
-        <Mail className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-        {text}
+      <div className="c-alert sm:col-span-2" data-tone="success">
+        <Mail strokeWidth={2} aria-hidden />
+        <span>{text}</span>
       </div>
     );
   }
   if (!result.tempPassword) return null;
   return (
-    <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 sm:col-span-2">
-      <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+    <div className="c-alert sm:col-span-2" data-tone="success">
+      <KeyRound strokeWidth={2} aria-hidden />
       <span>
         {kind === "hired" ? "Hired! " : kind === "created" ? "Employee created. " : ""}Share this temporary password with them privately:{" "}
-        <code className="rounded bg-white px-1.5 py-0.5 font-mono text-slate-900">{result.tempPassword}</code>
-        <span className="mt-1 block text-xs text-emerald-800">It won&apos;t be shown again. They&apos;ll choose their own after signing in.</span>
+        <code className="c-kbd px-1.5 py-0.5 font-mono text-heading">{result.tempPassword}</code>
+        <span className="mt-1 block text-xs">It won&apos;t be shown again. They&apos;ll choose their own after signing in.</span>
       </span>
     </div>
   );

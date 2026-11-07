@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Check, Copy, History, KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { PasswordInput, PasswordStrength } from "@/components/PasswordInput";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { apiFetch, setTokens } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { AuditLog } from "@/lib/types";
@@ -26,12 +26,12 @@ export default function SecurityPage() {
 function SectionTitle({ icon: Icon, title, description }: { icon: typeof KeyRound; title: string; description: string }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-soft text-link">
         <Icon className="h-5 w-5" />
       </div>
       <div>
-        <h2 className="font-semibold text-slate-900">{title}</h2>
-        <p className="text-sm text-slate-500">{description}</p>
+        <h2 className="font-semibold text-heading">{title}</h2>
+        <p className="text-sm text-secondary">{description}</p>
       </div>
     </div>
   );
@@ -75,22 +75,22 @@ function PasswordSection({ onChanged, mustChange }: { onChanged: () => Promise<v
     <Card className="p-5">
       <SectionTitle icon={KeyRound} title="Password" description="Changing it signs you out everywhere else." />
       {mustChange && (
-        <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p className="c-alert mt-4" data-tone="warning">
           You&apos;re using the temporary password HR gave you. Enter it as your current password and choose a new one.
         </p>
       )}
       <form onSubmit={onSubmit} className="mt-4 grid max-w-md gap-3">
         <div>
-          <label htmlFor="current-password" className="label">Current password</label>
+          <label htmlFor="current-password" className="c-label">Current password</label>
           <PasswordInput id="current-password" autoComplete="current-password" required value={current} onChange={setCurrent} />
         </div>
         <div>
-          <label htmlFor="new-password" className="label">New password</label>
+          <label htmlFor="new-password" className="c-label">New password</label>
           <PasswordInput id="new-password" autoComplete="new-password" required value={next} onChange={setNext} />
           <PasswordStrength password={next} />
         </div>
         <div>
-          <label htmlFor="confirm-password" className="label">Confirm new password</label>
+          <label htmlFor="confirm-password" className="c-label">Confirm new password</label>
           <PasswordInput id="confirm-password" autoComplete="new-password" required value={confirmNext} onChange={setConfirmNext} />
         </div>
         <ErrorBanner message={error} />
@@ -159,7 +159,7 @@ function TwoFactorSection({ totpEnabled, onChanged }: { totpEnabled: boolean; on
 
   const codeInput = (
     <div>
-      <label htmlFor="totp-code" className="label">6-digit code from your app</label>
+      <label htmlFor="totp-code" className="c-label">6-digit code from your app</label>
       <input
         id="totp-code"
         required
@@ -170,7 +170,7 @@ function TwoFactorSection({ totpEnabled, onChanged }: { totpEnabled: boolean; on
         value={code}
         onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
         placeholder="123456"
-        className="input max-w-[10rem] font-mono tracking-[0.3em]"
+        className="c-input max-w-40 font-mono tracking-[0.3em]"
       />
     </div>
   );
@@ -184,7 +184,8 @@ function TwoFactorSection({ totpEnabled, onChanged }: { totpEnabled: boolean; on
           description="Ask for a code from your phone in addition to your password when signing in."
         />
         <span
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${totpEnabled ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}
+          className="c-badge"
+          data-tone={totpEnabled ? "success" : "warning"}
         >
           {totpEnabled ? "On" : "Off"}
         </span>
@@ -193,9 +194,9 @@ function TwoFactorSection({ totpEnabled, onChanged }: { totpEnabled: boolean; on
       <div className="mt-4 max-w-md">
         {totpEnabled ? (
           <form onSubmit={disable} className="space-y-3">
-            <p className="text-sm text-slate-600">To turn it off, confirm your password and a current code.</p>
+            <p className="text-sm text-body">To turn it off, confirm your password and a current code.</p>
             <div>
-              <label htmlFor="disable-password" className="label">Password</label>
+              <label htmlFor="disable-password" className="c-label">Password</label>
               <PasswordInput id="disable-password" autoComplete="current-password" required value={password} onChange={setPassword} />
             </div>
             {codeInput}
@@ -204,20 +205,20 @@ function TwoFactorSection({ totpEnabled, onChanged }: { totpEnabled: boolean; on
           </form>
         ) : setup ? (
           <form onSubmit={confirmSetup} className="space-y-4">
-            <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-600">
+            <ol className="list-decimal space-y-1 pl-5 text-sm text-body">
               <li>Open an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password…).</li>
               <li>Add an account and choose &ldquo;Enter a setup key&rdquo;.</li>
               <li>Paste the key below, then enter the code the app shows.</li>
             </ol>
             <div className="flex items-center gap-2">
-              <code className="flex-1 break-all rounded-md bg-slate-100 px-3 py-2 font-mono text-sm tracking-wider">
+              <code className="flex-1 break-all rounded-md bg-muted px-3 py-2 font-mono text-sm tracking-wider">
                 {setup.secret.match(/.{1,4}/g)?.join(" ")}
               </code>
               <Button type="button" variant="secondary" size="sm" icon={copied ? Check : Copy} onClick={copySecret}>
                 {copied ? "Copied" : "Copy"}
               </Button>
             </div>
-            <a href={setup.otpauthUrl} className="inline-block text-xs font-medium text-blue-600 hover:underline">
+            <a href={setup.otpauthUrl} className="inline-block text-xs c-link">
               On this phone? Open in your authenticator app
             </a>
             {codeInput}
@@ -261,8 +262,8 @@ function AuditLogSection() {
           <EmptyState icon={History} title="No audit events yet" description="Changes to roles, payroll, compensation and settings will show up here." />
         </Card>
       ) : (
-        <div className="table-wrap">
-          <table>
+        <div className="c-table-wrap">
+          <table className="c-table">
             <thead>
               <tr>
                 <th>Action</th>
@@ -274,8 +275,8 @@ function AuditLogSection() {
               {logs.map((l) => (
                 <tr key={l.id}>
                   <td className="font-mono text-xs">{l.action}</td>
-                  <td className="text-slate-500">{l.actor?.email ?? "—"}</td>
-                  <td className="whitespace-nowrap text-slate-500">
+                  <td className="text-secondary">{l.actor?.email ?? "—"}</td>
+                  <td className="whitespace-nowrap text-secondary">
                     {new Date(l.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
                   </td>
                 </tr>

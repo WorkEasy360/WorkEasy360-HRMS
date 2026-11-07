@@ -1,70 +1,150 @@
 @import "tailwindcss";
+@import "../ui/tokens.css";
+@import "../ui/admin.css";
 
-:root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-}
-
+/*
+ * Tailwind's theme is mapped onto the design tokens, so a utility can never
+ * state a colour of its own: `bg-surface` resolves to var(--we-surface) and
+ * follows light and dark with it. See docs/design-system.md.
+ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Surfaces */
+  --color-canvas: var(--we-background);
+  --color-surface: var(--we-surface);
+  --color-muted: var(--we-surface-muted);
+
+  /* Navy structure */
+  --color-navy: var(--we-primary);
+  --color-navy-hover: var(--we-primary-hover);
+  --color-on-navy: var(--we-on-primary);
+  --color-on-navy-muted: var(--we-on-primary-muted);
+
+  /* Green accent */
+  --color-accent: var(--we-accent);
+  --color-accent-hover: var(--we-accent-hover);
+  --color-on-accent: var(--we-on-accent);
+  --color-accent-soft: var(--we-accent-soft);
+  --color-accent-strong: var(--we-accent-strong);
+
+  /* Lines */
+  --color-line: var(--we-border);
+  --color-line-strong: var(--we-border-strong);
+  --color-line-input: var(--we-border-input);
+
+  /* Text */
+  --color-heading: var(--we-text-primary);
+  --color-body: var(--we-text-body);
+  --color-secondary: var(--we-text-secondary);
+  --color-link: var(--we-link);
+  --color-focus: var(--we-focus);
+
+  /* Status */
+  --color-success: var(--we-success);
+  --color-success-soft: var(--we-success-soft);
+  --color-success-text: var(--we-success-text);
+  --color-info: var(--we-info);
+  --color-info-soft: var(--we-info-soft);
+  --color-info-text: var(--we-info-text);
+  --color-warning: var(--we-warning);
+  --color-warning-soft: var(--we-warning-soft);
+  --color-warning-text: var(--we-warning-text);
+  --color-danger: var(--we-error);
+  --color-danger-soft: var(--we-error-soft);
+  --color-danger-text: var(--we-error-text);
+  --color-on-danger: var(--we-on-error);
+  --color-ai: var(--we-ai);
+  --color-ai-soft: var(--we-ai-soft);
+  --color-ai-text: var(--we-ai-text);
+  --color-rating: var(--we-rating);
+
+  /* Chart series, in their fixed order */
+  --color-chart-1: var(--we-chart-1);
+  --color-chart-2: var(--we-chart-2);
+  --color-chart-3: var(--we-chart-3);
+
+  /* Shape */
+  --radius-sm: var(--we-radius-sm);
+  --radius-md: var(--we-radius-md);
+  --radius-lg: var(--we-radius-lg);
+  --radius-xl: var(--we-radius-xl);
+
+  /* Shadows */
+  --shadow-sm: var(--we-shadow-sm);
+  --shadow-md: var(--we-shadow-md);
+  --shadow-lg: var(--we-shadow-lg);
+
+  /* Sizes, as w-/h-/max-w- utilities */
+  --spacing-sidebar: var(--we-size-sidebar);
+  --spacing-topbar: var(--we-size-topbar);
+  --spacing-control: var(--we-size-control);
+  --spacing-icon: var(--we-size-icon);
+  --spacing-page: var(--we-size-page);
+
+  /* Type */
+  --font-sans: var(--font-inter);
+
+  /* Motion */
+  --default-transition-duration: var(--we-motion-fast);
+  --default-transition-timing-function: var(--we-motion-ease);
+
+  /* The sidebar folds into a drawer below this width. */
+  --breakpoint-shell: 60rem;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+/* `dark:` escape hatch for the few places a token cannot express, such as an
+   image swap. Token-driven colour needs no variant: it flips on its own. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@layer base {
+  /* A bare `border` draws the design system's line, not currentColor. */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--we-border);
+  }
+
+  html {
+    color-scheme: light;
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+      color-scheme: dark;
+    }
+  }
+
+  body {
+    background-color: var(--we-background);
+    color: var(--we-text-body);
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-size: var(--we-font-size-base);
+  }
+
+  /* Visible keyboard focus everywhere, without a ring on mouse clicks.
+     On navy regions the ring turns green (see [data-region] in tokens.css). */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--we-focus);
+    outline-offset: 2px;
+  }
 }
 
-/* Visible keyboard focus everywhere, without a ring on mouse clicks. */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-/* Shared form/table primitives so every page looks the same. */
 @layer components {
-  .input {
-    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-500;
+  /* Text links are always underlined. */
+  .c-link {
+    color: var(--we-link);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    font-weight: var(--we-font-weight-medium);
   }
-  .label {
-    @apply mb-1 block text-sm font-medium text-slate-700;
-  }
-  .table-wrap {
-    @apply overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm;
-  }
-  .table-wrap table {
-    @apply w-full text-sm;
-  }
-  .table-wrap thead {
-    @apply bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500;
-  }
-  .table-wrap th {
-    @apply whitespace-nowrap px-4 py-2.5 font-medium;
-  }
-  .table-wrap td {
-    @apply px-4 py-3;
-  }
-  .table-wrap tbody tr {
-    @apply border-t border-slate-100 transition-colors hover:bg-slate-50/70;
+  .c-link:hover {
+    color: var(--we-accent-strong);
   }
 }
 
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-toast-in {
-  animation: toast-in 160ms ease-out;
+@utility animate-toast-in {
+  animation: c-fade-in 160ms var(--we-motion-ease);
 }
 
 @media (prefers-reduced-motion: reduce) {

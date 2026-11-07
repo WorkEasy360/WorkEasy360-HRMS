@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ListChecks } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { OnboardingTask } from "@/lib/types";
-import { Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate, localIsoDate } from "@/components/format";
 
@@ -75,13 +75,13 @@ export default function MyTasksPage() {
         <>
           <Card className="px-4 py-3">
             <div className="flex items-baseline justify-between gap-3">
-              <p className="text-sm font-medium text-slate-900">
+              <p className="text-sm font-medium text-heading">
                 {doneCount} of {tasks.length} tasks complete
               </p>
-              <p className="text-sm font-semibold text-slate-900">{percent}%</p>
+              <p className="text-sm font-semibold text-heading">{percent}%</p>
             </div>
             <div
-              className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"
+              className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
               role="progressbar"
               aria-valuenow={percent}
               aria-valuemin={0}
@@ -89,42 +89,42 @@ export default function MyTasksPage() {
               aria-label="Onboarding progress"
             >
               <div
-                className={`h-full rounded-full transition-all ${percent === 100 ? "bg-emerald-500" : "bg-blue-600"}`}
+                className={`h-full rounded-full transition-all ${percent === 100 ? "bg-success" : "bg-accent"}`}
                 style={{ width: `${percent}%` }}
               />
             </div>
           </Card>
 
-          <Card className="divide-y divide-slate-100 overflow-hidden">
+          <Card className="divide-y divide-line overflow-hidden">
             {tasks.map((task) => {
               const overdue = !task.done && !!task.dueDate && task.dueDate.slice(0, 10) < todayStr;
               return (
                 <label
                   key={task.id}
                   htmlFor={`task-${task.id}`}
-                  className="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm hover:bg-slate-50"
+                  className="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm hover:bg-muted"
                 >
                   <input
                     id={`task-${task.id}`}
                     type="checkbox"
                     checked={task.done}
                     onChange={() => toggle(task)}
-                    className="h-4 w-4 shrink-0 rounded border-slate-300"
+                    className="h-4 w-4 shrink-0 rounded-sm border-line-strong"
                   />
-                  <span className={`min-w-0 flex-1 ${task.done ? "text-slate-400 line-through" : "text-slate-900"}`}>
+                  <span className={`min-w-0 flex-1 ${task.done ? "text-secondary line-through" : "text-heading"}`}>
                     {task.title}
                   </span>
                   {!task.done && TASK_LINKS[task.title] && (
                     <Link
                       href={TASK_LINKS[task.title].href}
                       onClick={(e) => e.stopPropagation()}
-                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
+                      className="shrink-0 text-xs c-link"
                     >
                       {TASK_LINKS[task.title].label}
                     </Link>
                   )}
                   {task.dueDate && (
-                    <span className={`shrink-0 whitespace-nowrap text-xs ${overdue ? "font-medium text-red-600" : "text-slate-400"}`}>
+                    <span className={`shrink-0 whitespace-nowrap text-xs ${overdue ? "font-medium text-danger-text" : "text-secondary"}`}>
                       {overdue ? "Overdue · " : "Due "}
                       {formatDate(task.dueDate)}
                     </span>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, FileQuestion } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { HrGuideArticle } from "@/lib/types";
-import { Card, EmptyState, Skeleton } from "@/components/ui";
+import { Card, EmptyState, Skeleton } from "@/ui";
 import { formatDate } from "@/components/format";
 
 export default function HrGuideArticlePage(props: PageProps<"/hr-guide/[id]">) {
@@ -22,7 +22,7 @@ export default function HrGuideArticlePage(props: PageProps<"/hr-guide/[id]">) {
   }, [id]);
 
   const backLink = (
-    <Link href="/hr-guide" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline">
+    <Link href="/hr-guide" className="c-back">
       <ArrowLeft className="h-4 w-4" />
       Back to HR Guide
     </Link>
@@ -59,16 +59,16 @@ export default function HrGuideArticlePage(props: PageProps<"/hr-guide/[id]">) {
       {backLink}
       <div>
         {article.category && (
-          <span className="inline-block rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+          <span className="inline-block rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
             {article.category}
           </span>
         )}
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{article.title}</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-heading">{article.title}</h1>
+        <p className="mt-1 text-sm text-secondary">
           By {article.author.firstName} {article.author.lastName} · Updated {formatDate(article.updatedAt)}
         </p>
       </div>
-      <Card className="whitespace-pre-wrap break-words p-5 text-sm leading-relaxed text-slate-700 sm:p-6">{article.body}</Card>
+      <Card className="whitespace-pre-wrap break-words p-5 text-sm leading-relaxed text-body sm:p-6">{article.body}</Card>
     </div>
   );
 }

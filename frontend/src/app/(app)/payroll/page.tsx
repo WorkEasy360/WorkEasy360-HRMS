@@ -5,7 +5,7 @@ import { Banknote, CalendarPlus, HandCoins, Play, Receipt, Save } from "lucide-r
 import { apiFetch, ApiError } from "@/lib/api";
 import { Employee, ExpenseClaim, LoanRequest, PayrollRun, Payslip } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDateTime, formatMoney } from "@/components/format";
 
@@ -130,19 +130,18 @@ export default function PayrollPage() {
       <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
       {!loading && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <SummaryTile label="Draft runs" value={String(draftRuns)} tone="text-amber-600" />
-          <SummaryTile
+        <div className="c-stats">
+          <StatCard label="Draft runs" value={String(draftRuns)} valueTone="warning" />
+          <StatCard
             label="To reimburse"
             value={formatMoney(toReimburse.reduce((sum, e) => sum + (Number(e.amount) || 0), 0))}
             hint={`${toReimburse.length} approved claim(s)`}
-            tone="text-blue-600"
+            valueTone="info"
           />
-          <SummaryTile
+          <StatCard
             label="Loans outstanding"
             value={formatMoney(loanOutstanding)}
             hint={`${activeLoans.length} active loan(s)`}
-            tone="text-slate-900"
           />
         </div>
       )}
@@ -162,7 +161,7 @@ export default function PayrollPage() {
       </div>
 
       <section>
-        <h2 className="mb-2 text-sm font-medium text-slate-500">Payroll runs</h2>
+        <h2 className="mb-2 text-sm font-medium text-secondary">Payroll runs</h2>
         {loading ? (
           <LoadingRows rows={3} />
         ) : runs.length === 0 ? (
@@ -179,18 +178,18 @@ export default function PayrollPage() {
               <Card key={run.id} className="p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="space-y-1">
-                    <p className="font-medium text-slate-900">
+                    <p className="font-medium text-heading">
                       {MONTH_NAMES[run.month - 1]} {run.year}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge status={run.status} />
                       {run.processedAt && (
-                        <span className="text-xs text-slate-400">Processed {formatDateTime(run.processedAt)}</span>
+                        <span className="text-xs text-secondary">Processed {formatDateTime(run.processedAt)}</span>
                       )}
                     </div>
                   </div>
                   {run.status === "DRAFT" ? (
-                    <Button size="sm" icon={Play} loading={processingId === run.id} onClick={() => processRun(run)}>
+                    <Button size="sm" variant="dark" icon={Play} loading={processingId === run.id} onClick={() => processRun(run)}>
                       Process
                     </Button>
                   ) : payslipsByRun[run.id] ? (
@@ -206,10 +205,10 @@ export default function PayrollPage() {
                 {payslipsByRun[run.id] && (
                   <div className="mt-3">
                     {payslipsByRun[run.id].length === 0 ? (
-                      <p className="text-sm text-slate-500">No payslips were generated for this run.</p>
+                      <p className="text-sm text-secondary">No payslips were generated for this run.</p>
                     ) : (
-                      <div className="table-wrap shadow-none">
-                        <table>
+                      <div className="c-table-wrap shadow-none">
+                        <table className="c-table">
                           <thead>
                             <tr>
                               <th>Employee</th>
@@ -221,12 +220,12 @@ export default function PayrollPage() {
                           <tbody>
                             {payslipsByRun[run.id].map((p) => (
                               <tr key={p.id}>
-                                <td className="font-medium text-slate-900">
+                                <td className="font-medium text-heading">
                                   {p.employee?.firstName} {p.employee?.lastName}
                                 </td>
-                                <td className="whitespace-nowrap text-slate-500">{formatMoney(p.grossPay)}</td>
-                                <td className="whitespace-nowrap text-slate-500">{formatMoney(p.deductions)}</td>
-                                <td className="whitespace-nowrap font-medium text-slate-900">{formatMoney(p.netPay)}</td>
+                                <td className="whitespace-nowrap text-secondary">{formatMoney(p.grossPay)}</td>
+                                <td className="whitespace-nowrap text-secondary">{formatMoney(p.deductions)}</td>
+                                <td className="whitespace-nowrap font-medium text-heading">{formatMoney(p.netPay)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -242,7 +241,7 @@ export default function PayrollPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-medium text-slate-500">Expense claims</h2>
+        <h2 className="mb-2 text-sm font-medium text-secondary">Expense claims</h2>
         {loading ? (
           <LoadingRows rows={3} />
         ) : expenses.length === 0 ? (
@@ -254,8 +253,8 @@ export default function PayrollPage() {
             />
           </Card>
         ) : (
-          <div className="table-wrap">
-            <table>
+          <div className="c-table-wrap">
+            <table className="c-table">
               <thead>
                 <tr>
                   <th>Employee</th>
@@ -270,11 +269,11 @@ export default function PayrollPage() {
               <tbody>
                 {expenses.map((e) => (
                   <tr key={e.id}>
-                    <td className="font-medium text-slate-900">
+                    <td className="font-medium text-heading">
                       {e.employee?.firstName} {e.employee?.lastName}
                     </td>
-                    <td className="text-slate-500">{e.category}</td>
-                    <td className="whitespace-nowrap text-slate-500">{formatMoney(e.amount)}</td>
+                    <td className="text-secondary">{e.category}</td>
+                    <td className="whitespace-nowrap text-secondary">{formatMoney(e.amount)}</td>
                     <td>
                       <StatusBadge status={e.status} />
                     </td>
@@ -300,7 +299,7 @@ export default function PayrollPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-medium text-slate-500">Loans</h2>
+        <h2 className="mb-2 text-sm font-medium text-secondary">Loans</h2>
         {loading ? (
           <LoadingRows rows={3} />
         ) : loans.length === 0 ? (
@@ -312,8 +311,8 @@ export default function PayrollPage() {
             />
           </Card>
         ) : (
-          <div className="table-wrap">
-            <table>
+          <div className="c-table-wrap">
+            <table className="c-table">
               <thead>
                 <tr>
                   <th>Employee</th>
@@ -325,11 +324,11 @@ export default function PayrollPage() {
               <tbody>
                 {loans.map((l) => (
                   <tr key={l.id}>
-                    <td className="font-medium text-slate-900">
+                    <td className="font-medium text-heading">
                       {l.employee?.firstName} {l.employee?.lastName}
                     </td>
-                    <td className="whitespace-nowrap text-slate-500">{formatMoney(l.amount)}</td>
-                    <td className="whitespace-nowrap text-slate-500">{formatMoney(l.remainingAmount)}</td>
+                    <td className="whitespace-nowrap text-secondary">{formatMoney(l.amount)}</td>
+                    <td className="whitespace-nowrap text-secondary">{formatMoney(l.remainingAmount)}</td>
                     <td>
                       <StatusBadge status={l.status} />
                     </td>
@@ -344,15 +343,6 @@ export default function PayrollPage() {
   );
 }
 
-function SummaryTile({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-      {hint && <p className="text-xs text-slate-400">{hint}</p>}
-    </Card>
-  );
-}
 
 function CompensationForm({ employees, onSaved }: { employees: Employee[]; onSaved: () => void }) {
   const [employeeId, setEmployeeId] = useState("");
@@ -381,13 +371,13 @@ function CompensationForm({ employees, onSaved }: { employees: Employee[]; onSav
 
   return (
     <Card className="p-4">
-      <h2 className="mb-3 text-sm font-medium text-slate-900">Set compensation</h2>
+      <h2 className="mb-3 text-sm font-medium text-heading">Set compensation</h2>
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label htmlFor="comp-employee" className="label">
+          <label htmlFor="comp-employee" className="c-label">
             Employee
           </label>
-          <select id="comp-employee" required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="input">
+          <select id="comp-employee" required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="c-select">
             <option value="">Select an employee…</option>
             {employees.map((emp) => (
               <option key={emp.id} value={emp.id}>
@@ -397,7 +387,7 @@ function CompensationForm({ employees, onSaved }: { employees: Employee[]; onSav
           </select>
         </div>
         <div>
-          <label htmlFor="comp-effective" className="label">
+          <label htmlFor="comp-effective" className="c-label">
             Effective from
           </label>
           <input
@@ -406,11 +396,11 @@ function CompensationForm({ employees, onSaved }: { employees: Employee[]; onSav
             type="date"
             value={effectiveFrom}
             onChange={(e) => setEffectiveFrom(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="comp-ctc" className="label">
+          <label htmlFor="comp-ctc" className="c-label">
             Annual CTC (₹)
           </label>
           <input
@@ -420,13 +410,13 @@ function CompensationForm({ employees, onSaved }: { employees: Employee[]; onSav
             min="1"
             value={annualCTC}
             onChange={(e) => setAnnualCTC(e.target.value)}
-            className="input"
+            className="c-input"
           />
           {Number(annualCTC) > 0 && (
-            <p className="mt-1 text-xs text-slate-400">≈ {formatMoney(Math.round(Number(annualCTC) / 12))} per month</p>
+            <p className="mt-1 text-xs text-secondary">≈ {formatMoney(Math.round(Number(annualCTC) / 12))} per month</p>
           )}
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" icon={Save} loading={submitting}>
             Save compensation
@@ -460,13 +450,13 @@ function NewRunForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <Card className="p-4">
-      <h2 className="mb-3 text-sm font-medium text-slate-900">Start a payroll run</h2>
+      <h2 className="mb-3 text-sm font-medium text-heading">Start a payroll run</h2>
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="run-month" className="label">
+          <label htmlFor="run-month" className="c-label">
             Month
           </label>
-          <select id="run-month" value={month} onChange={(e) => setMonth(e.target.value)} className="input">
+          <select id="run-month" value={month} onChange={(e) => setMonth(e.target.value)} className="c-select">
             {MONTH_NAMES.map((m, i) => (
               <option key={m} value={i + 1}>
                 {m}
@@ -475,12 +465,12 @@ function NewRunForm({ onCreated }: { onCreated: () => void }) {
           </select>
         </div>
         <div>
-          <label htmlFor="run-year" className="label">
+          <label htmlFor="run-year" className="c-label">
             Year
           </label>
-          <input id="run-year" required type="number" value={year} onChange={(e) => setYear(e.target.value)} className="input" />
+          <input id="run-year" required type="number" value={year} onChange={(e) => setYear(e.target.value)} className="c-input" />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" icon={CalendarPlus} loading={submitting}>
             Create run

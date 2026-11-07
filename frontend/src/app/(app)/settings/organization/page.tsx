@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Organization } from "@/lib/types";
-import { Button, Card, ErrorBanner, PageHeader, Skeleton } from "@/components/ui";
+import { Button, Card, ErrorBanner, PageHeader, Skeleton } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 
 export default function OrganizationSettingsPage() {
@@ -71,16 +71,16 @@ export default function OrganizationSettingsPage() {
         <Card className="p-4">
           <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4">
             <div>
-              <label htmlFor="org-slug" className="label">
+              <label htmlFor="org-slug" className="c-label">
                 Organization slug
               </label>
-              <input id="org-slug" disabled value={org?.slug ?? ""} className="input" aria-describedby="org-slug-hint" />
-              <p id="org-slug-hint" className="mt-1 text-xs text-slate-500">
+              <input id="org-slug" disabled value={org?.slug ?? ""} className="c-input" aria-describedby="org-slug-hint" />
+              <p id="org-slug-hint" className="mt-1 text-xs text-secondary">
                 Used when signing in. The slug can&apos;t be changed.
               </p>
             </div>
             <div>
-              <label htmlFor="org-name" className="label">
+              <label htmlFor="org-name" className="c-label">
                 Organization name
               </label>
               <input
@@ -89,11 +89,11 @@ export default function OrganizationSettingsPage() {
                 disabled={!canManage}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="input"
+                className="c-input"
               />
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-danger-text">{error}</p>}
 
             {canManage && (
               <div>

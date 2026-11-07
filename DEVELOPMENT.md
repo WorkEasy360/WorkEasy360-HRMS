@@ -78,11 +78,18 @@ To stop everything: `Ctrl+C` in both terminals, then `docker stop workeasy-postg
   - `auth-context.tsx` (`useAuth`, `hasPermission`)
   - `navigation.ts`: **the menu and page permissions, in one place**
   - `use-app-config.ts`: server flags such as email and registration
+- `ui/`: **the WorkEasy360 design system** — see [docs/design-system.md](./docs/design-system.md)
+  - `tokens.css`: every `--we-*` colour, size, radius, shadow and motion value, light and dark
+  - `admin.css`: the `c-*` component classes (`c-btn-primary`, `c-input`, `c-table`, `c-badge`, `c-menu`…)
+  - `tokens.ts`: typed `var(--we-*)` references for JS (chart series, inline SVG)
+  - `components/`: Button, Page, PageHeader, Card, StatCard, EmptyState, Badge, Alert, Progress, Skeleton, ErrorBanner, BrandMark/Lockup, ThemeToggle
+  - pages import all of it from `@/ui`
+  - **never hardcode a colour, size or radius in a page.** If a token is missing, add it to `tokens.css`
 - `components/`
-  - `ui.tsx`: Button, PageHeader, Card, EmptyState, LoadingRows, ErrorBanner
   - `feedback.tsx`: `useFeedback()` for `toast.*` and `confirm()`
   - `format.ts`: `formatDate`, `formatMoney` (₹) and friends
-  - `globals.css` (in `app/`) defines the `.input`, `.label` and `.table-wrap` classes
+  - `StatusBadge.tsx`, `CommandPalette.tsx`, `AuthShell.tsx`, `PasswordInput.tsx`, `AccessNotice.tsx`
+  - `globals.css` (in `app/`) imports the token and component CSS and maps Tailwind's theme onto the tokens, so `bg-surface`, `text-secondary` and `border-line` resolve to `var(--we-*)`
 
 ## Rules the code follows (keep them)
 

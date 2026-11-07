@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { ArrowLeft, MailCheck } from "lucide-react";
 import { AuthShell } from "@/components/AuthShell";
 import { errorMessage } from "@/components/feedback";
-import { Button, ErrorBanner } from "@/components/ui";
+import { Button, ErrorBanner } from "@/ui";
 import { apiFetch } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
@@ -41,7 +41,7 @@ export default function ForgotPasswordPage() {
   }
 
   const back = (
-    <Link href="/login" className="flex items-center justify-center gap-1 text-sm text-slate-500 hover:text-slate-800">
+    <Link href="/login" className="flex items-center justify-center gap-1 text-sm text-secondary hover:text-heading">
       <ArrowLeft className="h-4 w-4" /> Back to sign in
     </Link>
   );
@@ -50,8 +50,8 @@ export default function ForgotPasswordPage() {
     return (
       <AuthShell title="Check your email" subtitle="If that account exists, a reset link is on its way.">
         <div className="space-y-5">
-          <div className="flex items-start gap-3 rounded-lg bg-blue-50 p-4 text-sm text-blue-900">
-            <MailCheck className="h-5 w-5 shrink-0 text-blue-600" />
+          <div className="flex items-start gap-3 rounded-md bg-accent-soft p-4 text-sm text-accent-strong">
+            <MailCheck className="h-5 w-5 shrink-0 text-link" />
             <p>
               We sent a link to <strong>{email}</strong>. It works once and expires in 1 hour. Don&apos;t see it? Check your spam
               folder, or ask your HR admin to reset your password.
@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
     <AuthShell title="Forgot your password?" subtitle="Enter your details and we'll email you a link to choose a new one.">
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label htmlFor="org" className="label">Organization ID</label>
+          <label htmlFor="org" className="c-label">Organization ID</label>
           <input
             id="org"
             required
@@ -76,11 +76,11 @@ export default function ForgotPasswordPage() {
             value={organizationSlug}
             onChange={(e) => setOrganizationSlug(e.target.value)}
             placeholder="acme"
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="email" className="label">Work email</label>
+          <label htmlFor="email" className="c-label">Work email</label>
           <input
             id="email"
             type="email"
@@ -89,7 +89,7 @@ export default function ForgotPasswordPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@company.com"
-            className="input"
+            className="c-input"
           />
         </div>
         <ErrorBanner message={error} />

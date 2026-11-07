@@ -5,7 +5,7 @@ import { ClockPlus, FileClock } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { TimesheetEntry } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate } from "@/components/format";
 
@@ -67,10 +67,10 @@ export default function MyTimesheetPage() {
       )}
 
       {!loading && entries.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <SummaryTile label="Pending" value={pending.length} tone="text-amber-600" />
-          <SummaryTile label="Hours approved" value={round(approvedHours)} tone="text-emerald-600" />
-          <SummaryTile label="Hours logged" value={round(totalHours)} tone="text-slate-900" />
+        <div className="c-stats">
+          <StatCard label="Pending" value={pending.length} valueTone="warning" />
+          <StatCard label="Hours approved" value={round(approvedHours)} valueTone="success" />
+          <StatCard label="Hours logged" value={round(totalHours)} />
         </div>
       )}
 
@@ -84,7 +84,7 @@ export default function MyTimesheetPage() {
             description="Log the hours you spent working and your manager will review them."
             action={
               !showForm && (
-                <Button icon={ClockPlus} onClick={() => setShowForm(true)}>
+                <Button variant="secondary" icon={ClockPlus} onClick={() => setShowForm(true)}>
                   Log hours
                 </Button>
               )
@@ -92,8 +92,8 @@ export default function MyTimesheetPage() {
           />
         </Card>
       ) : (
-        <div className="table-wrap">
-          <table>
+        <div className="c-table-wrap">
+          <table className="c-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -105,9 +105,9 @@ export default function MyTimesheetPage() {
             <tbody>
               {entries.map((e) => (
                 <tr key={e.id}>
-                  <td className="whitespace-nowrap font-medium text-slate-900">{formatDate(e.date)}</td>
-                  <td className="text-slate-500">{e.hours}</td>
-                  <td className="text-slate-500">{e.task ?? "—"}</td>
+                  <td className="whitespace-nowrap font-medium text-heading">{formatDate(e.date)}</td>
+                  <td className="text-secondary">{e.hours}</td>
+                  <td className="text-secondary">{e.task ?? "—"}</td>
                   <td>
                     <StatusBadge status={e.status} />
                   </td>
@@ -125,14 +125,6 @@ function round(n: number) {
   return Math.round(n * 10) / 10;
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function TimesheetForm({ onSaved }: { onSaved: () => void }) {
   const [date, setDate] = useState("");
@@ -162,13 +154,13 @@ function TimesheetForm({ onSaved }: { onSaved: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="ts-date" className="label">
+          <label htmlFor="ts-date" className="c-label">
             Date
           </label>
-          <input id="ts-date" required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input" />
+          <input id="ts-date" required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="ts-hours" className="label">
+          <label htmlFor="ts-hours" className="c-label">
             Hours
           </label>
           <input
@@ -180,16 +172,16 @@ function TimesheetForm({ onSaved }: { onSaved: () => void }) {
             step="0.5"
             value={hours}
             onChange={(e) => setHours(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor="ts-task" className="label">
-            Task <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="ts-task" className="c-label">
+            Task <span className="font-normal text-secondary">(optional)</span>
           </label>
-          <input id="ts-task" value={task} onChange={(e) => setTask(e.target.value)} className="input" placeholder="What did you work on?" />
+          <input id="ts-task" value={task} onChange={(e) => setTask(e.target.value)} className="c-input" placeholder="What did you work on?" />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Save entry

@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { ArrowRight, Plus, Workflow } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { AutomationRule } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 
 const TRIGGER_LABELS: Record<AutomationRule["trigger"], string> = {
@@ -114,7 +114,7 @@ export default function AutomationPage() {
             description="Create a rule to post announcements or assign onboarding tasks automatically when events happen."
             action={
               !showForm && (
-                <Button icon={Plus} onClick={() => setShowForm(true)}>
+                <Button variant="secondary" icon={Plus} onClick={() => setShowForm(true)}>
                   New rule
                 </Button>
               )
@@ -123,36 +123,36 @@ export default function AutomationPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-secondary">
             {enabledCount} of {rules.length} {rules.length === 1 ? "rule" : "rules"} enabled
           </p>
           {rules.map((r) => (
             <Card key={r.id} className="p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className={`font-medium ${r.enabled ? "text-slate-900" : "text-slate-500"}`}>{r.name}</p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
+                  <p className={`font-medium ${r.enabled ? "text-heading" : "text-secondary"}`}>{r.name}</p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-secondary">
                     <span>When</span>
-                    <strong className="font-medium text-slate-700">{TRIGGER_LABELS[r.trigger]}</strong>
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                    <strong className="font-medium text-slate-700">{ACTION_LABELS[r.actionType]}</strong>
+                    <strong className="font-medium text-body">{TRIGGER_LABELS[r.trigger]}</strong>
+                    <ArrowRight className="h-3.5 w-3.5 text-secondary" aria-hidden="true" />
+                    <strong className="font-medium text-body">{ACTION_LABELS[r.actionType]}</strong>
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  <label htmlFor={`rule-enabled-${r.id}`} className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
+                  <label htmlFor={`rule-enabled-${r.id}`} className="flex cursor-pointer items-center gap-1.5 text-xs text-body">
                     <input
                       id={`rule-enabled-${r.id}`}
                       type="checkbox"
                       checked={r.enabled}
                       onChange={() => toggle(r)}
-                      className="h-4 w-4 rounded border-slate-300"
+                      className="h-4 w-4 rounded-sm border-line-strong"
                     />
                     Enabled
                   </label>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    className="text-danger-text hover:bg-danger-soft hover:text-danger-text"
                     loading={deletingId === r.id}
                     onClick={() => remove(r)}
                   >
@@ -199,7 +199,7 @@ function RuleForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label htmlFor="rule-name" className="label">
+          <label htmlFor="rule-name" className="c-label">
             Rule name
           </label>
           <input
@@ -208,18 +208,18 @@ function RuleForm({ onCreated }: { onCreated: () => void }) {
             placeholder="e.g. Welcome new joiners"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="rule-trigger" className="label">
+          <label htmlFor="rule-trigger" className="c-label">
             When
           </label>
           <select
             id="rule-trigger"
             value={trigger}
             onChange={(e) => setTrigger(e.target.value as AutomationRule["trigger"])}
-            className="input"
+            className="c-select"
           >
             {Object.entries(TRIGGER_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -229,14 +229,14 @@ function RuleForm({ onCreated }: { onCreated: () => void }) {
           </select>
         </div>
         <div>
-          <label htmlFor="rule-action" className="label">
+          <label htmlFor="rule-action" className="c-label">
             Then
           </label>
           <select
             id="rule-action"
             value={actionType}
             onChange={(e) => setActionType(e.target.value as AutomationRule["actionType"])}
-            className="input"
+            className="c-select"
           >
             {Object.entries(ACTION_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -248,16 +248,16 @@ function RuleForm({ onCreated }: { onCreated: () => void }) {
 
         {actionType === "ASSIGN_ONBOARDING_TASK" && (
           <div className="sm:col-span-2">
-            <label htmlFor="rule-task-title" className="label">
+            <label htmlFor="rule-task-title" className="c-label">
               Task title
             </label>
-            <input id="rule-task-title" required value={title} onChange={(e) => setTitle(e.target.value)} className="input" />
+            <input id="rule-task-title" required value={title} onChange={(e) => setTitle(e.target.value)} className="c-input" />
           </div>
         )}
         {actionType === "CREATE_ANNOUNCEMENT" && (
           <>
             <div className="sm:col-span-2">
-              <label htmlFor="rule-announcement-title" className="label">
+              <label htmlFor="rule-announcement-title" className="c-label">
                 Announcement title
               </label>
               <input
@@ -265,11 +265,11 @@ function RuleForm({ onCreated }: { onCreated: () => void }) {
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="input"
+                className="c-input"
               />
             </div>
             <div className="sm:col-span-2">
-              <label htmlFor="rule-announcement-body" className="label">
+              <label htmlFor="rule-announcement-body" className="c-label">
                 Announcement body
               </label>
               <textarea
@@ -278,13 +278,13 @@ function RuleForm({ onCreated }: { onCreated: () => void }) {
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 rows={3}
-                className="input"
+                className="c-textarea"
               />
             </div>
           </>
         )}
 
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Create rule

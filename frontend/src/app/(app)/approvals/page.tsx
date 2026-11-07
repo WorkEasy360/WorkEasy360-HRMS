@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { CalendarCheck, Check, Clock, HandCoins, Receipt, X, type LucideIcon } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { ExpenseClaim, LeaveRequest, LoanRequest, TimesheetEntry } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate, formatDateRange, formatMoney } from "@/components/format";
 
@@ -101,10 +101,10 @@ export default function ApprovalsPage() {
         renderDetail={(r) => (
           <>
             <EmployeeLine item={r} />
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-secondary">
               {r.leaveType.name} · {formatDateRange(r.startDate, r.endDate)} · {r.days} day(s)
             </p>
-            {r.reason && <p className="mt-1 text-sm text-slate-600">&ldquo;{r.reason}&rdquo;</p>}
+            {r.reason && <p className="mt-1 text-sm text-body">&ldquo;{r.reason}&rdquo;</p>}
           </>
         )}
       />
@@ -121,7 +121,7 @@ export default function ApprovalsPage() {
         renderDetail={(t) => (
           <>
             <EmployeeLine item={t} />
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-secondary">
               {formatDate(t.date)} · {t.hours}h{t.task ? ` · ${t.task}` : ""}
             </p>
           </>
@@ -140,10 +140,10 @@ export default function ApprovalsPage() {
         renderDetail={(e) => (
           <>
             <EmployeeLine item={e} />
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-secondary">
               {e.category} · {formatMoney(e.amount)} · {formatDate(e.expenseDate)}
             </p>
-            {e.description && <p className="mt-1 text-sm text-slate-600">{e.description}</p>}
+            {e.description && <p className="mt-1 text-sm text-body">{e.description}</p>}
           </>
         )}
       />
@@ -160,10 +160,10 @@ export default function ApprovalsPage() {
         renderDetail={(l) => (
           <>
             <EmployeeLine item={l} />
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-secondary">
               {formatMoney(l.amount)} over {l.emiMonths} months
             </p>
-            {l.reason && <p className="mt-1 text-sm text-slate-600">{l.reason}</p>}
+            {l.reason && <p className="mt-1 text-sm text-body">{l.reason}</p>}
           </>
         )}
       />
@@ -173,9 +173,9 @@ export default function ApprovalsPage() {
 
 function EmployeeLine({ item }: { item: Employeeish }) {
   return (
-    <p className="font-medium text-slate-900">
+    <p className="font-medium text-heading">
       {item.employee?.firstName} {item.employee?.lastName}{" "}
-      <span className="font-normal text-slate-500">({item.employee?.employeeCode})</span>
+      <span className="font-normal text-secondary">({item.employee?.employeeCode})</span>
     </p>
   );
 }
@@ -203,10 +203,10 @@ function ApprovalSection<T extends { id: string }>({
 }) {
   return (
     <section className="space-y-3">
-      <h2 className="flex items-center gap-2 text-sm font-medium text-slate-500">
+      <h2 className="flex items-center gap-2 text-sm font-medium text-secondary">
         {title}
         {!loading && items.length > 0 && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">{items.length}</span>
+          <span className="c-badge" data-tone="warning">{items.length}</span>
         )}
       </h2>
       {loading ? (
@@ -226,7 +226,7 @@ function ApprovalSection<T extends { id: string }>({
                   <div className="flex shrink-0 gap-2">
                     <Button
                       size="sm"
-                      variant="success"
+                      variant="dark"
                       icon={Check}
                       loading={isBusy && busy?.approve}
                       disabled={isBusy}
@@ -238,7 +238,7 @@ function ApprovalSection<T extends { id: string }>({
                       size="sm"
                       variant="secondary"
                       icon={X}
-                      className="text-red-600 hover:text-red-700"
+                      className="text-danger-text hover:text-danger-text"
                       loading={isBusy && !busy?.approve}
                       disabled={isBusy}
                       onClick={() => onDecide(item, false)}

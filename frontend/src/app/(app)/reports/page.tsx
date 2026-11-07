@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, CalendarRange, TrendingDown, Users, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { AttritionReport, HeadcountReport, LeaveLiabilityReport, PayrollCostReport } from "@/lib/types";
-import { Card, EmptyState, ErrorBanner, PageHeader, Skeleton } from "@/components/ui";
+import { Card, CHART_SERIES, EmptyState, ErrorBanner, PageHeader, Skeleton } from "@/ui";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatMoney } from "@/components/format";
 
@@ -69,21 +69,21 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {headcount && (
           <ReportCard title="Headcount" icon={Users}>
-            <p className="text-3xl font-semibold text-slate-900">{headcount.total}</p>
-            <p className="text-xs text-slate-500">employees in total</p>
+            <p className="c-stat-value">{headcount.total}</p>
+            <p className="text-xs text-secondary">employees in total</p>
             {headcount.byStatus.length > 0 && (
               <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
                 {headcount.byStatus.map((s) => (
-                  <div key={s.status} className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2">
+                  <div key={s.status} className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2">
                     <StatusBadge status={s.status} />
-                    <span className="font-semibold text-slate-900">{s.count}</span>
+                    <span className="font-semibold text-heading">{s.count}</span>
                   </div>
                 ))}
               </div>
             )}
             {headcount.byDepartment.length > 0 && (
               <div className="mt-4">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">By department</p>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-secondary">By department</p>
                 <div className="space-y-2 text-sm">
                   {headcount.byDepartment.map((d) => (
                     <BarRow key={d.department} label={d.department} value={d.count} max={maxDept} />
@@ -96,14 +96,14 @@ export default function ReportsPage() {
 
         {attrition && (
           <ReportCard title="Attrition (last 12 months)" icon={TrendingDown}>
-            <p className="text-3xl font-semibold text-slate-900">{attrition.totalExits}</p>
-            <p className="text-xs text-slate-500">exits</p>
+            <p className="c-stat-value">{attrition.totalExits}</p>
+            <p className="text-xs text-secondary">exits</p>
             {attrition.byMonth.length === 0 ? (
               <EmptyState icon={TrendingDown} title="No exits recorded" description="Nobody has left in the last 12 months." />
             ) : (
               <div className="mt-4 space-y-2 text-sm">
                 {attrition.byMonth.map((m) => (
-                  <BarRow key={m.month} label={m.month} value={m.count} max={maxExits} tone="bg-rose-400" />
+                  <BarRow key={m.month} label={m.month} value={m.count} max={maxExits} series={3} />
                 ))}
               </div>
             )}
@@ -123,8 +123,8 @@ export default function ReportsPage() {
               />
             </Card>
           ) : (
-            <div className="table-wrap">
-              <table>
+            <div className="c-table-wrap">
+              <table className="c-table">
                 <thead>
                   <tr>
                     <th>Leave type</th>
@@ -135,9 +135,9 @@ export default function ReportsPage() {
                 <tbody>
                   {leaveLiability.byLeaveType.map((l) => (
                     <tr key={l.leaveType}>
-                      <td className="font-medium text-slate-900">{l.leaveType}</td>
-                      <td className="text-right text-slate-700">{l.remainingDays}</td>
-                      <td className="text-right text-slate-500">{l.usedDays}</td>
+                      <td className="font-medium text-heading">{l.leaveType}</td>
+                      <td className="text-right text-body">{l.remainingDays}</td>
+                      <td className="text-right text-secondary">{l.usedDays}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -159,8 +159,8 @@ export default function ReportsPage() {
               />
             </Card>
           ) : (
-            <div className="table-wrap">
-              <table>
+            <div className="c-table-wrap">
+              <table className="c-table">
                 <thead>
                   <tr>
                     <th>Period</th>
@@ -172,12 +172,12 @@ export default function ReportsPage() {
                 <tbody>
                   {payrollCost.byRun.map((r) => (
                     <tr key={`${r.month}-${r.year}`}>
-                      <td className="whitespace-nowrap font-medium text-slate-900">
+                      <td className="whitespace-nowrap font-medium text-heading">
                         {MONTH_NAMES[r.month - 1]} {r.year}
                       </td>
-                      <td className="text-right text-slate-500">{r.employeeCount}</td>
-                      <td className="whitespace-nowrap text-right text-slate-700">{formatMoney(r.grossTotal)}</td>
-                      <td className="whitespace-nowrap text-right font-medium text-slate-900">{formatMoney(r.netTotal)}</td>
+                      <td className="text-right text-secondary">{r.employeeCount}</td>
+                      <td className="whitespace-nowrap text-right text-body">{formatMoney(r.grossTotal)}</td>
+                      <td className="whitespace-nowrap text-right font-medium text-heading">{formatMoney(r.netTotal)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -207,8 +207,8 @@ function ReportCard({
 }) {
   return (
     <Card className="p-5">
-      <h2 className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-500">
-        <Icon className="h-4 w-4 text-slate-400" />
+      <h2 className="mb-2 flex items-center gap-2 text-sm font-medium text-secondary">
+        <Icon className="h-4 w-4 text-secondary" />
         {title}
       </h2>
       {children}
@@ -218,22 +218,26 @@ function ReportCard({
 
 function SectionTitle({ title, icon: Icon }: { title: string; icon: typeof Users }) {
   return (
-    <h2 className="flex items-center gap-2 text-sm font-medium text-slate-500">
-      <Icon className="h-4 w-4 text-slate-400" />
+    <h2 className="flex items-center gap-2 text-sm font-medium text-secondary">
+      <Icon className="h-4 w-4 text-secondary" />
       {title}
     </h2>
   );
 }
 
-function BarRow({ label, value, max, tone = "bg-blue-500" }: { label: string; value: number; max: number; tone?: string }) {
+/** One bar. `series` picks a chart colour in the fixed order: 1, 2, then 3. */
+function BarRow({ label, value, max, series = 1 }: { label: string; value: number; max: number; series?: 1 | 2 | 3 }) {
   return (
     <div>
       <div className="flex justify-between gap-2">
-        <span className="truncate text-slate-700">{label}</span>
-        <span className="font-medium text-slate-900">{value}</span>
+        <span className="truncate text-body">{label}</span>
+        <span className="font-medium tabular-nums text-heading">{value}</span>
       </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full rounded-full ${tone}`} style={{ width: `${(value / max) * 100}%` }} />
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${(value / max) * 100}%`, backgroundColor: CHART_SERIES[series - 1] }}
+        />
       </div>
     </div>
   );

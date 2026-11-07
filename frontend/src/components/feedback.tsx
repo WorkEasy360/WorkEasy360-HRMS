@@ -2,7 +2,7 @@
 
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "./ui";
+import { Button, type Tone } from "@/ui";
 
 type ToastKind = "success" | "error" | "info";
 type Toast = { id: number; kind: ToastKind; message: string };
@@ -26,11 +26,7 @@ interface FeedbackContextValue {
 const FeedbackContext = createContext<FeedbackContextValue | null>(null);
 
 const TOAST_ICONS = { success: CheckCircle2, error: XCircle, info: Info };
-const TOAST_STYLES = {
-  success: "border-emerald-200 text-emerald-800 [&_svg]:text-emerald-600",
-  error: "border-red-200 text-red-800 [&_svg]:text-red-600",
-  info: "border-blue-200 text-slate-800 [&_svg]:text-blue-600",
-};
+const TOAST_TONES: Record<ToastKind, Tone> = { success: "success", error: "danger", info: "info" };
 
 export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -81,12 +77,13 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
             <div
               key={t.id}
               role={t.kind === "error" ? "alert" : "status"}
-              className={`animate-toast-in pointer-events-auto flex items-start gap-2.5 rounded-lg border bg-white px-3.5 py-3 text-sm shadow-lg ${TOAST_STYLES[t.kind]}`}
+              data-tone={TOAST_TONES[t.kind]}
+              className="c-alert animate-toast-in pointer-events-auto shadow-lg"
             >
-              <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+              <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
               <p className="flex-1">{t.message}</p>
-              <button onClick={() => dismiss(t.id)} aria-label="Dismiss" className="text-slate-400 hover:text-slate-600">
-                <X className="h-4 w-4" />
+              <button onClick={() => dismiss(t.id)} aria-label="Dismiss" className="shrink-0 opacity-70 hover:opacity-100">
+                <X className="size-4" aria-hidden />
               </button>
             </div>
           );
@@ -110,25 +107,25 @@ function ConfirmDialog({ options, onClose }: { options: ConfirmOptions; onClose:
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4" onClick={() => onClose(false)}>
+    <div className="c-dialog z-[70]" onClick={() => onClose(false)}>
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
-        className="animate-toast-in w-full max-w-md rounded-xl bg-white p-5 shadow-xl"
+        className="c-dialog-panel animate-toast-in max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex gap-3">
           {options.destructive && (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
-              <AlertTriangle className="h-5 w-5" />
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger-text">
+              <AlertTriangle className="size-5" aria-hidden />
             </div>
           )}
           <div>
-            <h2 id="confirm-title" className="text-base font-semibold text-slate-900">
+            <h2 id="confirm-title" className="c-dialog-title">
               {options.title}
             </h2>
-            {options.description && <p className="mt-1 text-sm text-slate-500">{options.description}</p>}
+            {options.description && <p className="mt-1 text-sm text-secondary">{options.description}</p>}
           </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">

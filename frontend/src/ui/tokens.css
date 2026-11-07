@@ -1,0 +1,253 @@
+/*
+ * WorkEasy360 design tokens — the single source of every colour, size, radius,
+ * shadow and motion value in this app. See docs/design-system.md.
+ *
+ * Nothing outside this file states a colour, size or radius literal. If a value
+ * is missing here, add it here; never hardcode it in a component or a page.
+ *
+ * Dark values are their own steps, not an inversion. Dark mode follows the OS
+ * until someone picks with the theme toggle, which sets data-theme on <html>
+ * before first paint (see app/layout.tsx).
+ */
+
+:root {
+  /* Brand ------------------------------------------------------------------ */
+  /* The logo green. For the brand mark only, never for UI. */
+  --we-logo: #00bf62;
+
+  /* Structure -------------------------------------------------------------- */
+  --we-primary: #1b3040;
+  --we-primary-hover: #112532;
+  /* Text on navy fills (sidebar, bulk bar, hero). */
+  --we-on-primary: #f1f5f9;
+  --we-on-primary-muted: #94a3b8;
+
+  /* Accent ----------------------------------------------------------------- */
+  --we-accent: #4ade80;
+  --we-accent-hover: #22c55e;
+  --we-on-accent: #1b3040;
+  --we-accent-soft: #dcfce7;
+  --we-accent-strong: #166534;
+
+  /* Surfaces --------------------------------------------------------------- */
+  --we-background: #f8fafc;
+  --we-surface: #ffffff;
+  --we-surface-muted: #f1f5f9;
+
+  /* Lines ------------------------------------------------------------------ */
+  --we-border: #e2e8f0;
+  --we-border-strong: #cbd5e1;
+  --we-border-input: #7d8ba0;
+
+  /* Text ------------------------------------------------------------------- */
+  --we-text-primary: #1b3040;
+  --we-text-body: #334155;
+  --we-text-secondary: #64748b;
+  --we-link: #166534;
+
+  /* Focus ------------------------------------------------------------------ */
+  --we-focus: #1b3040;
+  /* Focus on navy surfaces, where the navy ring would disappear. */
+  --we-focus-on-primary: #4ade80;
+
+  /* Status ----------------------------------------------------------------- */
+  --we-success: #16a34a;
+  --we-success-soft: #dcfce7;
+  --we-success-text: #166534;
+  --we-info: #2563eb;
+  --we-info-soft: #dbeafe;
+  --we-info-text: #1e40af;
+  --we-warning: #d97706;
+  --we-warning-soft: #fef3c7;
+  --we-warning-text: #92400e;
+  --we-error: #dc2626;
+  --we-error-soft: #fee2e2;
+  --we-error-text: #991b1b;
+  /* Text on an error fill (the danger button). White on this red is 4.8:1. */
+  --we-on-error: #ffffff;
+  --we-ai: #7c3aed;
+  --we-ai-soft: #ede9fe;
+  --we-ai-text: #5b21b6;
+
+  /* Star ratings only. Never a chart series. */
+  --we-rating: #b45309;
+
+  /* Charts ----------------------------------------------------------------- */
+  --we-chart-1: #235e9c;
+  --we-chart-2: #16a34a;
+  --we-chart-3: #8b5cf6;
+
+  /* Scrims over the page, under dialogs and drawers. */
+  --we-scrim: rgb(27 48 64 / 45%);
+
+  /* Type ------------------------------------------------------------------- */
+  --we-font-size-xs: 0.75rem; /* 12 — metadata */
+  --we-font-size-sm: 0.8125rem; /* 13 — secondary */
+  --we-font-size-base: 0.875rem; /* 14 — body */
+  --we-font-size-md: 1rem; /* 16/600 — component heading */
+  --we-font-size-lg: 1.125rem; /* 18/600 — section heading */
+  --we-font-size-xl: 1.5rem; /* 24/600 — page heading */
+  --we-font-weight-normal: 400;
+  --we-font-weight-medium: 500;
+  --we-font-weight-semibold: 600;
+
+  /* Spacing — a 4px grid -------------------------------------------------- */
+  --we-space-1: 0.25rem; /* 4 */
+  --we-space-2: 0.5rem; /* 8 */
+  --we-space-3: 0.75rem; /* 12 */
+  --we-space-4: 1rem; /* 16 */
+  --we-space-5: 1.25rem; /* 20 */
+  --we-space-6: 1.5rem; /* 24 */
+  --we-space-8: 2rem; /* 32 */
+  --we-space-12: 3rem; /* 48 */
+
+  /* Shape ------------------------------------------------------------------ */
+  --we-radius-sm: 6px; /* tags, small chips */
+  --we-radius-md: 8px; /* inputs, buttons, menu items */
+  --we-radius-lg: 12px; /* cards, tables, popovers */
+  --we-radius-xl: 16px; /* dialogs */
+  --we-radius-full: 9999px;
+
+  /* Shadows — nearly flat, except the floating layer ---------------------- */
+  --we-shadow-sm: 0 1px 2px 0 rgb(27 48 64 / 6%);
+  --we-shadow-md: 0 2px 6px -1px rgb(27 48 64 / 10%);
+  --we-shadow-lg: 0 10px 24px -6px rgb(27 48 64 / 18%);
+
+  /* Sizes ------------------------------------------------------------------ */
+  --we-size-sidebar: 15.5rem; /* 248 */
+  --we-size-topbar: 3.5rem; /* 56 */
+  --we-size-control: 2.25rem; /* 36 */
+  --we-size-control-sm: 1.875rem; /* 30 */
+  --we-size-nav-item: 2.25rem; /* 36 */
+  --we-size-icon: 1.125rem; /* 18 */
+  --we-size-page: 75rem; /* 1200 */
+  --we-size-page-narrow: 55rem; /* 880 */
+
+  /* Motion ----------------------------------------------------------------- */
+  --we-motion-fast: 150ms; /* hover, focus */
+  --we-motion-drawer: 200ms;
+  --we-motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dark values, applied when the OS asks for dark and nobody chose light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --we-primary: #27455a;
+    --we-primary-hover: #315770;
+    --we-on-primary: #f1f5f9;
+    --we-on-primary-muted: #aebbcb; /* 5.2:1 on the dark navy */
+
+    --we-accent: #4ade80;
+    --we-accent-hover: #22c55e;
+    --we-on-accent: #112532;
+    --we-accent-soft: #14432a;
+    --we-accent-strong: #86efac;
+
+    --we-background: #0b1620;
+    --we-surface: #112532;
+    --we-surface-muted: #16303f;
+
+    --we-border: #27455a;
+    --we-border-strong: #36576e;
+    --we-border-input: #5a7a91;
+
+    --we-text-primary: #f1f5f9;
+    --we-text-body: #cbd5e1;
+    --we-text-secondary: #94a3b8;
+    --we-link: #4ade80;
+
+    --we-focus: #4ade80;
+    --we-focus-on-primary: #4ade80;
+
+    --we-success-soft: #14432a;
+    --we-success-text: #86efac;
+    --we-info-soft: #17304f;
+    --we-info-text: #bfdbfe;
+    --we-warning-soft: #432a0d;
+    --we-warning-text: #fde68a;
+    --we-error-soft: #451a1a;
+    --we-error-text: #fecaca;
+    --we-ai-soft: #2d1f4d;
+    --we-ai-text: #ddd6fe;
+
+    --we-rating: #f59e0b; /* 7.3:1 on the dark surface */
+
+
+    --we-chart-1: #5a93d8;
+    --we-chart-2: #1faf55;
+    --we-chart-3: #9f7aea;
+
+    --we-scrim: rgb(5 12 18 / 65%);
+
+    --we-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 30%);
+    --we-shadow-md: 0 2px 6px -1px rgb(0 0 0 / 40%);
+    --we-shadow-lg: 0 10px 24px -6px rgb(0 0 0 / 55%);
+  }
+}
+
+/* The same dark steps, when someone chose dark with the theme toggle. */
+:root[data-theme="dark"] {
+  --we-primary: #27455a;
+  --we-primary-hover: #315770;
+  --we-on-primary: #f1f5f9;
+  --we-on-primary-muted: #aebbcb; /* 5.2:1 on the dark navy */
+
+  --we-accent: #4ade80;
+  --we-accent-hover: #22c55e;
+  --we-on-accent: #112532;
+  --we-accent-soft: #14432a;
+  --we-accent-strong: #86efac;
+
+  --we-background: #0b1620;
+  --we-surface: #112532;
+  --we-surface-muted: #16303f;
+
+  --we-border: #27455a;
+  --we-border-strong: #36576e;
+  --we-border-input: #5a7a91;
+
+  --we-text-primary: #f1f5f9;
+  --we-text-body: #cbd5e1;
+  --we-text-secondary: #94a3b8;
+  --we-link: #4ade80;
+
+  --we-focus: #4ade80;
+  --we-focus-on-primary: #4ade80;
+
+  --we-success-soft: #14432a;
+  --we-success-text: #86efac;
+  --we-info-soft: #17304f;
+  --we-info-text: #bfdbfe;
+  --we-warning-soft: #432a0d;
+  --we-warning-text: #fde68a;
+  --we-error-soft: #451a1a;
+  --we-error-text: #fecaca;
+  --we-ai-soft: #2d1f4d;
+  --we-ai-text: #ddd6fe;
+
+  --we-rating: #f59e0b; /* 7.3:1 on the dark surface */
+
+
+  --we-chart-1: #5a93d8;
+  --we-chart-2: #1faf55;
+  --we-chart-3: #9f7aea;
+
+  --we-scrim: rgb(5 12 18 / 65%);
+
+  --we-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 30%);
+  --we-shadow-md: 0 2px 6px -1px rgb(0 0 0 / 40%);
+  --we-shadow-lg: 0 10px 24px -6px rgb(0 0 0 / 55%);
+}
+
+/* A navy region (sidebar, bulk bar, hero) swaps the text and focus steps so
+   anything inside it reads correctly without restating a colour. */
+[data-region="primary"] {
+  --we-text-primary: var(--we-on-primary);
+  --we-text-body: var(--we-on-primary);
+  --we-text-secondary: var(--we-on-primary-muted);
+  --we-border: color-mix(in srgb, var(--we-on-primary) 14%, transparent);
+  --we-border-strong: color-mix(in srgb, var(--we-on-primary) 24%, transparent);
+  --we-surface-muted: color-mix(in srgb, var(--we-on-primary) 8%, transparent);
+  --we-focus: var(--we-focus-on-primary);
+  --we-link: var(--we-accent);
+}

@@ -5,7 +5,7 @@ import { Laptop, PackagePlus } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Asset, Employee } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 
 export default function AssetsPage() {
@@ -127,10 +127,10 @@ export default function AssetsPage() {
       )}
 
       {!loading && assets.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <SummaryTile label="Total" value={assets.length} tone="text-slate-900" />
-          <SummaryTile label="Available" value={available} tone="text-emerald-600" />
-          <SummaryTile label="Assigned" value={assigned} tone="text-blue-600" />
+        <div className="c-stats">
+          <StatCard label="Total" value={assets.length} />
+          <StatCard label="Available" value={available} valueTone="success" />
+          <StatCard label="Assigned" value={assigned} valueTone="info" />
         </div>
       )}
 
@@ -144,7 +144,7 @@ export default function AssetsPage() {
             description="Add laptops, phones, ID cards and other equipment so you can assign them to employees."
             action={
               !showForm && (
-                <Button icon={PackagePlus} onClick={() => setShowForm(true)}>
+                <Button variant="secondary" icon={PackagePlus} onClick={() => setShowForm(true)}>
                   New asset
                 </Button>
               )
@@ -152,8 +152,8 @@ export default function AssetsPage() {
           />
         </Card>
       ) : (
-        <div className="table-wrap">
-          <table>
+        <div className="c-table-wrap">
+          <table className="c-table">
             <thead>
               <tr>
                 <th>Asset</th>
@@ -169,14 +169,14 @@ export default function AssetsPage() {
               {assets.map((a) => (
                 <tr key={a.id}>
                   <td>
-                    <span className="font-medium text-slate-900">{a.name}</span>
-                    {a.serialNumber && <span className="block text-xs text-slate-400">{a.serialNumber}</span>}
+                    <span className="font-medium text-heading">{a.name}</span>
+                    {a.serialNumber && <span className="block text-xs text-secondary">{a.serialNumber}</span>}
                   </td>
-                  <td className="text-slate-500">{a.category}</td>
+                  <td className="text-secondary">{a.category}</td>
                   <td>
                     <StatusBadge status={a.status} />
                   </td>
-                  <td className="text-slate-500">
+                  <td className="text-secondary">
                     {a.assignedTo ? `${a.assignedTo.firstName} ${a.assignedTo.lastName}` : "—"}
                   </td>
                   <td>
@@ -187,7 +187,7 @@ export default function AssetsPage() {
                           defaultValue=""
                           disabled={busyId === a.id}
                           onChange={(e) => assign(a, e.target.value)}
-                          className="input w-auto py-1 text-xs"
+                          className="c-select w-auto py-1 text-xs"
                         >
                           <option value="" disabled>
                             Assign…
@@ -208,7 +208,7 @@ export default function AssetsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                          className="text-danger-text hover:bg-danger-soft hover:text-danger-text"
                           disabled={busyId === a.id}
                           onClick={() => retire(a)}
                         >
@@ -227,14 +227,6 @@ export default function AssetsPage() {
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function AssetForm({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
@@ -264,7 +256,7 @@ function AssetForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="asset-name" className="label">
+          <label htmlFor="asset-name" className="c-label">
             Asset name
           </label>
           <input
@@ -273,14 +265,14 @@ function AssetForm({ onCreated }: { onCreated: () => void }) {
             placeholder="e.g. MacBook Pro 14"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="asset-category" className="label">
+          <label htmlFor="asset-category" className="c-label">
             Category
           </label>
-          <select id="asset-category" value={category} onChange={(e) => setCategory(e.target.value)} className="input">
+          <select id="asset-category" value={category} onChange={(e) => setCategory(e.target.value)} className="c-select">
             <option value="Laptop">Laptop</option>
             <option value="Phone">Phone</option>
             <option value="ID Card">ID Card</option>
@@ -289,12 +281,12 @@ function AssetForm({ onCreated }: { onCreated: () => void }) {
           </select>
         </div>
         <div>
-          <label htmlFor="asset-serial" className="label">
-            Serial number <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="asset-serial" className="c-label">
+            Serial number <span className="font-normal text-secondary">(optional)</span>
           </label>
-          <input id="asset-serial" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="input" />
+          <input id="asset-serial" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="c-input" />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Add asset

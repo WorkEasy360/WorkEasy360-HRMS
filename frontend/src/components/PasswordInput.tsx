@@ -30,15 +30,15 @@ export function PasswordInput({
         required={required}
         placeholder={placeholder}
         maxLength={128}
-        className="input pr-10"
+        className="c-input pr-10"
       />
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? "Hide password" : "Show password"}
-        className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-600"
+        className="absolute inset-y-0 right-0 flex items-center px-3 text-secondary hover:text-heading"
       >
-        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        {visible ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
       </button>
     </div>
   );
@@ -54,19 +54,19 @@ export function passwordIssues(password: string): string[] {
 }
 
 export function PasswordStrength({ password }: { password: string }) {
-  if (!password) return <p className="mt-1 text-xs text-slate-500">At least 10 characters, with a letter and a number.</p>;
+  if (!password) return <p className="c-hint">At least 10 characters, with a letter and a number.</p>;
   const issues = passwordIssues(password);
   const score = Math.min(4, (issues.length === 0 ? 2 : 0) + (password.length >= 14 ? 1 : 0) + (/[^A-Za-z0-9]/.test(password) ? 1 : 0));
-  const colors = ["bg-red-500", "bg-amber-500", "bg-amber-500", "bg-emerald-500", "bg-emerald-600"];
+  const colors = ["bg-danger", "bg-warning", "bg-warning", "bg-success", "bg-accent-hover"];
   const labels = ["Too weak", "Okay", "Good", "Strong", "Very strong"];
   return (
     <div className="mt-1.5" aria-live="polite">
       <div className="flex gap-1">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className={`h-1 flex-1 rounded-full ${i < Math.max(1, score) ? colors[score] : "bg-slate-200"}`} />
+          <div key={i} className={`h-1 flex-1 rounded-full ${i < Math.max(1, score) ? colors[score] : "bg-muted"}`} />
         ))}
       </div>
-      <p className="mt-1 text-xs text-slate-500">
+      <p className="c-hint">
         {issues.length ? `Still needs ${issues.join(", ")}.` : labels[score]}
       </p>
     </div>

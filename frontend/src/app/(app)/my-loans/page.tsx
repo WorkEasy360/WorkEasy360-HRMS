@@ -5,7 +5,7 @@ import { HandCoins, Plus } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { LoanRequest } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatMoney } from "@/components/format";
 
@@ -67,10 +67,10 @@ export default function MyLoansPage() {
       )}
 
       {!loading && loans.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <SummaryTile label="Pending" value={String(pending)} tone="text-amber-600" />
-          <SummaryTile label="Outstanding" value={formatMoney(outstanding)} tone="text-slate-900" />
-          <SummaryTile label="Monthly EMI" value={formatMoney(monthlyEmi)} tone="text-slate-900" />
+        <div className="c-stats">
+          <StatCard label="Pending" value={String(pending)} valueTone="warning" />
+          <StatCard label="Outstanding" value={formatMoney(outstanding)} />
+          <StatCard label="Monthly EMI" value={formatMoney(monthlyEmi)} />
         </div>
       )}
 
@@ -85,7 +85,7 @@ export default function MyLoansPage() {
               description="Need a salary advance? Submit a request with the amount and number of EMIs, and HR will review it."
               action={
                 !showForm && (
-                  <Button icon={Plus} onClick={() => setShowForm(true)}>
+                  <Button variant="secondary" icon={Plus} onClick={() => setShowForm(true)}>
                     Request loan
                   </Button>
                 )
@@ -98,14 +98,14 @@ export default function MyLoansPage() {
           {loans.map((l) => (
             <Card key={l.id} className="p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-medium text-slate-900">
+                <p className="font-medium text-heading">
                   {formatMoney(l.amount)} over {l.emiMonths} months
                 </p>
                 <StatusBadge status={l.status} />
               </div>
-              {l.reason && <p className="mt-1 text-sm text-slate-600">{l.reason}</p>}
+              {l.reason && <p className="mt-1 text-sm text-body">{l.reason}</p>}
               {(l.status === "ACTIVE" || l.status === "CLOSED") && (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-secondary">
                   {formatMoney(l.monthlyDeduction)}/month · {formatMoney(l.remainingAmount)} remaining
                 </p>
               )}
@@ -117,14 +117,6 @@ export default function MyLoansPage() {
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: string; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function LoanForm({ onCreated }: { onCreated: () => void }) {
   const [amount, setAmount] = useState("");
@@ -156,7 +148,7 @@ function LoanForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="loan-amount" className="label">
+          <label htmlFor="loan-amount" className="c-label">
             Amount (₹)
           </label>
           <input
@@ -166,11 +158,11 @@ function LoanForm({ onCreated }: { onCreated: () => void }) {
             min="1"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="loan-emi" className="label">
+          <label htmlFor="loan-emi" className="c-label">
             EMI months
           </label>
           <input
@@ -181,21 +173,21 @@ function LoanForm({ onCreated }: { onCreated: () => void }) {
             max="60"
             value={emiMonths}
             onChange={(e) => setEmiMonths(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor="loan-reason" className="label">
-            Reason <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="loan-reason" className="c-label">
+            Reason <span className="font-normal text-secondary">(optional)</span>
           </label>
-          <input id="loan-reason" value={reason} onChange={(e) => setReason(e.target.value)} className="input" />
+          <input id="loan-reason" value={reason} onChange={(e) => setReason(e.target.value)} className="c-input" />
         </div>
         {perMonth !== null && (
-          <p className="text-sm text-slate-500 sm:col-span-2">
+          <p className="text-sm text-secondary sm:col-span-2">
             Approx. {formatMoney(Math.round(perMonth))} per month for {emiMonths} months (final amount set on approval).
           </p>
         )}
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Submit request

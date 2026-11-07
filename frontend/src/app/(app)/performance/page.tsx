@@ -6,7 +6,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { PerformanceReview } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDateRange } from "@/components/format";
 
@@ -77,14 +77,14 @@ export default function PerformancePage() {
       )}
 
       {!loading && (myReviews.length > 0 || teamReviews.length > 0) && (
-        <div className="grid grid-cols-2 gap-3">
-          <SummaryTile label="Self-assessments due" value={myOpen} tone={myOpen ? "text-amber-600" : "text-slate-900"} />
-          <SummaryTile label="Team reviews open" value={teamOpen} tone={teamOpen ? "text-amber-600" : "text-slate-900"} />
+        <div className="c-stats">
+          <StatCard label="Self-assessments due" value={myOpen} valueTone={myOpen ? "warning" : undefined} />
+          <StatCard label="Team reviews open" value={teamOpen} valueTone={teamOpen ? "warning" : undefined} />
         </div>
       )}
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-slate-500">My reviews</h2>
+        <h2 className="text-sm font-medium text-secondary">My reviews</h2>
         {loading ? (
           <LoadingRows rows={2} />
         ) : myReviews.length === 0 ? (
@@ -110,7 +110,7 @@ export default function PerformancePage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-slate-500">Team reviews</h2>
+        <h2 className="text-sm font-medium text-secondary">Team reviews</h2>
         {loading ? (
           <LoadingRows rows={2} />
         ) : teamReviews.length === 0 ? (
@@ -138,14 +138,6 @@ export default function PerformancePage() {
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function CycleForm({ onCreated }: { onCreated: (name: string) => void }) {
   const { confirm } = useFeedback();
@@ -179,19 +171,19 @@ function CycleForm({ onCreated }: { onCreated: (name: string) => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label htmlFor="cycle-name" className="label">
+          <label htmlFor="cycle-name" className="c-label">
             Cycle name
           </label>
-          <input id="cycle-name" required placeholder="e.g. H2 2026" value={name} onChange={(e) => setName(e.target.value)} className="input" />
+          <input id="cycle-name" required placeholder="e.g. H2 2026" value={name} onChange={(e) => setName(e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="cycle-start" className="label">
+          <label htmlFor="cycle-start" className="c-label">
             Start date
           </label>
-          <input id="cycle-start" required type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
+          <input id="cycle-start" required type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="cycle-end" className="label">
+          <label htmlFor="cycle-end" className="c-label">
             End date
           </label>
           <input
@@ -201,15 +193,15 @@ function CycleForm({ onCreated }: { onCreated: (name: string) => void }) {
             min={startDate || undefined}
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Create cycle
           </Button>
-          <p className="mt-2 text-xs text-slate-500">Creating a cycle opens reviews for all active employees.</p>
+          <p className="mt-2 text-xs text-secondary">Creating a cycle opens reviews for all active employees.</p>
         </div>
       </form>
     </Card>
@@ -249,7 +241,7 @@ function MyReviewCard({ review, onUpdated }: { review: PerformanceReview; onUpda
         </dl>
       ) : (
         <div className="mt-3 space-y-2">
-          <label htmlFor={fieldId} className="label">
+          <label htmlFor={fieldId} className="c-label">
             Self-assessment
           </label>
           <textarea
@@ -258,7 +250,7 @@ function MyReviewCard({ review, onUpdated }: { review: PerformanceReview; onUpda
             onChange={(e) => setSelfAssessment(e.target.value)}
             placeholder="Summarise your achievements, challenges and growth this cycle…"
             rows={3}
-            className="input"
+            className="c-textarea"
           />
           <Button size="sm" icon={ClipboardCheck} onClick={submit} loading={saving} disabled={!selfAssessment}>
             Submit self-assessment
@@ -316,7 +308,7 @@ function TeamReviewCard({ review, onUpdated }: { review: PerformanceReview; onUp
       ) : (
         <div className="mt-3 space-y-3">
           <div>
-            <label htmlFor={assessmentId} className="label">
+            <label htmlFor={assessmentId} className="c-label">
               Your assessment
             </label>
             <textarea
@@ -325,15 +317,15 @@ function TeamReviewCard({ review, onUpdated }: { review: PerformanceReview; onUp
               onChange={(e) => setManagerAssessment(e.target.value)}
               placeholder="Share feedback on performance, strengths and areas to improve…"
               rows={3}
-              className="input"
+              className="c-textarea"
             />
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label htmlFor={ratingId} className="label">
+              <label htmlFor={ratingId} className="c-label">
                 Rating
               </label>
-              <select id={ratingId} value={rating} onChange={(e) => setRating(Number(e.target.value))} className="input w-24">
+              <select id={ratingId} value={rating} onChange={(e) => setRating(Number(e.target.value))} className="c-select w-24">
                 {[1, 2, 3, 4, 5].map((r) => (
                   <option key={r} value={r}>
                     {r} / 5
@@ -355,8 +347,8 @@ function ReviewHeader({ title, review }: { title: string; review: PerformanceRev
   return (
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div className="min-w-0">
-        <p className="font-medium text-slate-900">{title}</p>
-        <p className="text-xs text-slate-500">{formatDateRange(review.cycle.startDate, review.cycle.endDate)}</p>
+        <p className="font-medium text-heading">{title}</p>
+        <p className="text-xs text-secondary">{formatDateRange(review.cycle.startDate, review.cycle.endDate)}</p>
       </div>
       <StatusBadge status={review.status} />
     </div>
@@ -366,8 +358,8 @@ function ReviewHeader({ title, review }: { title: string; review: PerformanceRev
 function AssessmentRow({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-slate-500">{label}</dt>
-      <dd className="whitespace-pre-line text-slate-700">{value || "—"}</dd>
+      <dt className="text-xs font-medium text-secondary">{label}</dt>
+      <dd className="whitespace-pre-line text-body">{value || "—"}</dd>
     </div>
   );
 }
@@ -375,16 +367,16 @@ function AssessmentRow({ label, value }: { label: string; value: string | null }
 function Rating({ value, label = "Rating" }: { value: number | null; label?: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-slate-500">{label}</dt>
+      <dt className="text-xs font-medium text-secondary">{label}</dt>
       <dd className="mt-0.5 flex items-center gap-1">
         {[1, 2, 3, 4, 5].map((n) => (
           <Star
             key={n}
-            className={`h-4 w-4 ${value !== null && n <= value ? "fill-amber-400 text-amber-400" : "text-slate-300"}`}
+            className={`h-4 w-4 ${value !== null && n <= value ? "fill-rating text-rating" : "text-secondary"}`}
             aria-hidden="true"
           />
         ))}
-        <span className="ml-1 text-sm font-medium text-slate-900">{value ?? "—"}/5</span>
+        <span className="ml-1 text-sm font-medium text-heading">{value ?? "—"}/5</span>
       </dd>
     </div>
   );

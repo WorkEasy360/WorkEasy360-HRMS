@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Payslip } from "@/lib/types";
-import { Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage } from "@/components/feedback";
 import { formatMoney } from "@/components/format";
 
@@ -44,15 +44,15 @@ export default function MyPayslipsPage() {
       {!loading && latest && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Card className="px-4 py-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-medium uppercase tracking-wide text-secondary">
               Latest net pay{latest.payrollRun ? ` · ${MONTH_NAMES[latest.payrollRun.month - 1]} ${latest.payrollRun.year}` : ""}
             </p>
-            <p className="mt-1 text-2xl font-semibold text-emerald-600">{formatMoney(latest.netPay)}</p>
+            <p className="mt-1 text-2xl font-semibold text-success">{formatMoney(latest.netPay)}</p>
           </Card>
           {latestYear && (
             <Card className="px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Net pay in {latestYear}</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">{formatMoney(yearToDateNet)}</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-secondary">Net pay in {latestYear}</p>
+              <p className="mt-1 text-2xl font-semibold text-heading">{formatMoney(yearToDateNet)}</p>
             </Card>
           )}
         </div>
@@ -75,23 +75,23 @@ export default function MyPayslipsPage() {
           {payslips.map((p) => (
             <Card key={p.id} className="p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-medium text-slate-900">
+                <p className="font-medium text-heading">
                   {p.payrollRun ? `${MONTH_NAMES[p.payrollRun.month - 1]} ${p.payrollRun.year}` : "—"}
                 </p>
-                <p className="text-sm font-semibold text-slate-900">{formatMoney(p.netPay)}</p>
+                <p className="text-sm font-semibold text-heading">{formatMoney(p.netPay)}</p>
               </div>
               <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                 <div>
-                  <dt className="text-slate-500">Gross</dt>
-                  <dd className="font-medium text-slate-700">{formatMoney(p.grossPay)}</dd>
+                  <dt className="text-secondary">Gross</dt>
+                  <dd className="font-medium text-body">{formatMoney(p.grossPay)}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Deductions</dt>
-                  <dd className="font-medium text-red-600">{formatMoney(p.deductions)}</dd>
+                  <dt className="text-secondary">Deductions</dt>
+                  <dd className="font-medium text-danger-text">{formatMoney(p.deductions)}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Net pay</dt>
-                  <dd className="font-medium text-emerald-600">{formatMoney(p.netPay)}</dd>
+                  <dt className="text-secondary">Net pay</dt>
+                  <dd className="font-medium text-success">{formatMoney(p.netPay)}</dd>
                 </div>
               </dl>
             </Card>

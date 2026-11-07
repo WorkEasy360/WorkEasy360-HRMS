@@ -7,7 +7,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { AuthShell, safeNextPath } from "@/components/AuthShell";
 import { errorMessage } from "@/components/feedback";
 import { PasswordInput } from "@/components/PasswordInput";
-import { Button, ErrorBanner } from "@/components/ui";
+import { Button, ErrorBanner } from "@/ui";
 import { useAuth } from "@/lib/auth-context";
 import { useAppConfig } from "@/lib/use-app-config";
 
@@ -86,12 +86,12 @@ export default function LoginPage() {
     return (
       <AuthShell title="Two-step verification" subtitle="Enter the 6-digit code from your authenticator app.">
         <form onSubmit={onSubmitMfa} className="space-y-4">
-          <div className="flex items-center gap-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
-            <ShieldCheck className="h-5 w-5 shrink-0 text-blue-600" />
+          <div className="flex items-center gap-3 rounded-md bg-accent-soft p-3 text-sm text-accent-strong">
+            <ShieldCheck className="h-5 w-5 shrink-0 text-link" />
             Your account is protected with two-factor authentication.
           </div>
           <div>
-            <label htmlFor="code" className="label">Verification code</label>
+            <label htmlFor="code" className="c-label">Verification code</label>
             <input
               id="code"
               required
@@ -103,7 +103,7 @@ export default function LoginPage() {
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               placeholder="123456"
-              className="input text-center font-mono text-lg tracking-[0.5em]"
+              className="c-input text-center font-mono text-lg tracking-[0.5em]"
             />
           </div>
           <ErrorBanner message={error} />
@@ -117,7 +117,7 @@ export default function LoginPage() {
               setCode("");
               setError(null);
             }}
-            className="flex w-full items-center justify-center gap-1 text-sm text-slate-500 hover:text-slate-800"
+            className="flex w-full items-center justify-center gap-1 text-sm text-secondary hover:text-heading"
           >
             <ArrowLeft className="h-4 w-4" /> Use a different account
           </button>
@@ -130,7 +130,7 @@ export default function LoginPage() {
     <AuthShell title="Welcome back" subtitle="Sign in to your organization's workspace.">
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label htmlFor="org" className="label">Organization ID</label>
+          <label htmlFor="org" className="c-label">Organization ID</label>
           <input
             id="org"
             required
@@ -140,12 +140,12 @@ export default function LoginPage() {
             value={organizationSlug}
             onChange={(e) => setOrganizationSlug(e.target.value)}
             placeholder="acme"
-            className="input"
+            className="c-input"
           />
-          <p className="mt-1 text-xs text-slate-500">The short name your company uses, e.g. &ldquo;acme&rdquo;. Ask HR if unsure.</p>
+          <p className="mt-1 text-xs text-secondary">The short name your company uses, e.g. &ldquo;acme&rdquo;. Ask HR if unsure.</p>
         </div>
         <div>
-          <label htmlFor="email" className="label">Work email</label>
+          <label htmlFor="email" className="c-label">Work email</label>
           <input
             id="email"
             type="email"
@@ -154,21 +154,21 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@company.com"
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <label htmlFor="password" className="text-sm font-medium text-slate-700">Password</label>
+            <label htmlFor="password" className="text-sm font-medium text-body">Password</label>
             {config?.emailEnabled && (
-              <Link href="/forgot-password" className="text-xs font-medium text-blue-600 hover:underline">
+              <Link href="/forgot-password" className="text-xs c-link">
                 Forgot password?
               </Link>
             )}
           </div>
           <PasswordInput id="password" required autoComplete="current-password" value={password} onChange={setPassword} />
           {config && !config.emailEnabled && (
-            <p className="mt-1 text-xs text-slate-500">Forgot your password? Ask your HR admin to reset it from your profile.</p>
+            <p className="mt-1 text-xs text-secondary">Forgot your password? Ask your HR admin to reset it from your profile.</p>
           )}
         </div>
 
@@ -179,9 +179,9 @@ export default function LoginPage() {
         </Button>
 
         {config?.registrationEnabled && (
-          <p className="text-center text-sm text-slate-500">
+          <p className="text-center text-sm text-secondary">
             Setting up for a new company?{" "}
-            <Link href="/register" className="font-medium text-blue-600 hover:underline">
+            <Link href="/register" className="c-link">
               Create an organization
             </Link>
           </p>

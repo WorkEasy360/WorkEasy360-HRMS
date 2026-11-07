@@ -5,7 +5,7 @@ import { Plus, Receipt } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { ExpenseClaim } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate, formatMoney } from "@/components/format";
 
@@ -67,19 +67,19 @@ export default function MyExpensesPage() {
       )}
 
       {!loading && claims.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <SummaryTile label="Pending" value={formatMoney(sumOf(pending))} hint={`${pending.length} claim(s)`} tone="text-amber-600" />
-          <SummaryTile
+        <div className="c-stats">
+          <StatCard label="Pending" value={formatMoney(sumOf(pending))} hint={`${pending.length} claim(s)`} valueTone="warning" />
+          <StatCard
             label="Awaiting payout"
             value={formatMoney(sumOf(awaitingPayout))}
             hint={`${awaitingPayout.length} claim(s)`}
-            tone="text-blue-600"
+            valueTone="info"
           />
-          <SummaryTile
+          <StatCard
             label="Reimbursed"
             value={formatMoney(sumOf(reimbursed))}
             hint={`${reimbursed.length} claim(s)`}
-            tone="text-emerald-600"
+            valueTone="success"
           />
         </div>
       )}
@@ -95,7 +95,7 @@ export default function MyExpensesPage() {
               description="Spent money on work travel, meals or supplies? Submit a claim to get reimbursed."
               action={
                 !showForm && (
-                  <Button icon={Plus} onClick={() => setShowForm(true)}>
+                  <Button variant="secondary" icon={Plus} onClick={() => setShowForm(true)}>
                     New claim
                   </Button>
                 )
@@ -104,8 +104,8 @@ export default function MyExpensesPage() {
           </Card>
         )
       ) : (
-        <div className="table-wrap">
-          <table>
+        <div className="c-table-wrap">
+          <table className="c-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -117,12 +117,12 @@ export default function MyExpensesPage() {
             <tbody>
               {claims.map((c) => (
                 <tr key={c.id}>
-                  <td className="whitespace-nowrap text-slate-900">{formatDate(c.expenseDate)}</td>
-                  <td className="text-slate-500">
+                  <td className="whitespace-nowrap text-heading">{formatDate(c.expenseDate)}</td>
+                  <td className="text-secondary">
                     {c.category}
-                    {c.description && <span className="block text-xs text-slate-400">{c.description}</span>}
+                    {c.description && <span className="block text-xs text-secondary">{c.description}</span>}
                   </td>
-                  <td className="whitespace-nowrap font-medium text-slate-900">{formatMoney(c.amount)}</td>
+                  <td className="whitespace-nowrap font-medium text-heading">{formatMoney(c.amount)}</td>
                   <td>
                     <StatusBadge status={c.status} />
                   </td>
@@ -136,15 +136,6 @@ export default function MyExpensesPage() {
   );
 }
 
-function SummaryTile({ label, value, hint, tone }: { label: string; value: string; hint: string; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-      <p className="text-xs text-slate-400">{hint}</p>
-    </Card>
-  );
-}
 
 function ExpenseForm({ onCreated }: { onCreated: () => void }) {
   const [category, setCategory] = useState("Travel");
@@ -175,10 +166,10 @@ function ExpenseForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="expense-category" className="label">
+          <label htmlFor="expense-category" className="c-label">
             Category
           </label>
-          <select id="expense-category" value={category} onChange={(e) => setCategory(e.target.value)} className="input">
+          <select id="expense-category" value={category} onChange={(e) => setCategory(e.target.value)} className="c-select">
             <option value="Travel">Travel</option>
             <option value="Meals">Meals</option>
             <option value="Office Supplies">Office Supplies</option>
@@ -187,7 +178,7 @@ function ExpenseForm({ onCreated }: { onCreated: () => void }) {
           </select>
         </div>
         <div>
-          <label htmlFor="expense-amount" className="label">
+          <label htmlFor="expense-amount" className="c-label">
             Amount (₹)
           </label>
           <input
@@ -197,11 +188,11 @@ function ExpenseForm({ onCreated }: { onCreated: () => void }) {
             min="1"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="expense-date" className="label">
+          <label htmlFor="expense-date" className="c-label">
             Expense date
           </label>
           <input
@@ -210,16 +201,16 @@ function ExpenseForm({ onCreated }: { onCreated: () => void }) {
             type="date"
             value={expenseDate}
             onChange={(e) => setExpenseDate(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="expense-description" className="label">
-            Description <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="expense-description" className="c-label">
+            Description <span className="font-normal text-secondary">(optional)</span>
           </label>
-          <input id="expense-description" value={description} onChange={(e) => setDescription(e.target.value)} className="input" />
+          <input id="expense-description" value={description} onChange={(e) => setDescription(e.target.value)} className="c-input" />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Submit claim

@@ -5,7 +5,7 @@ import { BriefcaseBusiness, CalendarClock, MousePointerClick, Plus, UserCheck, U
 import { apiFetch, ApiError } from "@/lib/api";
 import { Candidate, Department, Employee, JobPosting } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDateTime } from "@/components/format";
 import { AccessNotice, type AccessResult } from "@/components/AccessNotice";
@@ -132,10 +132,10 @@ export default function RecruitmentPage() {
       )}
 
       {!loading && postings.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <SummaryTile label="Open postings" value={openCount} tone="text-emerald-600" />
-          <SummaryTile label="Closed" value={postings.length - openCount} tone="text-slate-500" />
-          <SummaryTile label="Candidates" value={totalCandidates} tone="text-slate-900" />
+        <div className="c-stats">
+          <StatCard label="Open postings" value={openCount} valueTone="success" />
+          <StatCard label="Closed" value={postings.length - openCount} valueTone="muted" />
+          <StatCard label="Candidates" value={totalCandidates} />
         </div>
       )}
 
@@ -149,7 +149,7 @@ export default function RecruitmentPage() {
             description="Create a job posting to start adding candidates and scheduling interviews."
             action={
               !showPostingForm && (
-                <Button icon={Plus} onClick={() => setShowPostingForm(true)}>
+                <Button variant="secondary" icon={Plus} onClick={() => setShowPostingForm(true)}>
                   New job posting
                 </Button>
               )
@@ -159,7 +159,7 @@ export default function RecruitmentPage() {
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <section className="space-y-3">
-            <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">Job postings</h2>
+            <h2 className="text-xs font-medium uppercase tracking-wide text-secondary">Job postings</h2>
             {postings.map((p) => {
               const selected = selectedPostingId === p.id;
               const count = p._count?.candidates ?? 0;
@@ -173,19 +173,19 @@ export default function RecruitmentPage() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") setSelectedPostingId(p.id);
                   }}
-                  className={`block w-full cursor-pointer rounded-xl border bg-white p-4 text-left shadow-sm transition ${
-                    selected ? "border-blue-500 ring-2 ring-blue-500/20" : "border-slate-200 hover:border-blue-300 hover:shadow-md"
+                  className={`block w-full cursor-pointer rounded-lg border bg-surface p-4 text-left shadow-sm transition ${
+                    selected ? "border-accent ring-2 ring-accent/20" : "border-line hover:border-accent hover:shadow-md"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-medium text-slate-900">{p.title}</p>
-                      {p.department?.name && <p className="text-xs text-slate-500">{p.department.name}</p>}
+                      <p className="font-medium text-heading">{p.title}</p>
+                      {p.department?.name && <p className="text-xs text-secondary">{p.department.name}</p>}
                     </div>
                     <StatusBadge status={p.status} />
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-2">
-                    <p className="inline-flex items-center gap-1 text-xs text-slate-500">
+                    <p className="inline-flex items-center gap-1 text-xs text-secondary">
                       <Users className="h-3.5 w-3.5" />
                       {count} candidate{count === 1 ? "" : "s"}
                     </p>
@@ -193,7 +193,7 @@ export default function RecruitmentPage() {
                       variant="ghost"
                       size="sm"
                       loading={togglingId === p.id}
-                      className={p.status === "OPEN" ? "text-red-600 hover:bg-red-50 hover:text-red-700" : "text-blue-600 hover:bg-blue-50"}
+                      className={p.status === "OPEN" ? "text-danger-text" : "text-link"}
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleStatus(p);
@@ -210,7 +210,7 @@ export default function RecruitmentPage() {
 
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="min-w-0 truncate text-xs font-medium uppercase tracking-wide text-slate-500">
+              <h2 className="min-w-0 truncate text-xs font-medium uppercase tracking-wide text-secondary">
                 {selectedPosting ? `Candidates — ${selectedPosting.title}` : "Candidates"}
               </h2>
               {selectedPosting && (
@@ -255,7 +255,7 @@ export default function RecruitmentPage() {
                       description="Add candidates who applied for this role to start tracking them through the pipeline."
                       action={
                         !showCandidateForm && (
-                          <Button icon={UserPlus} onClick={() => setShowCandidateForm(true)}>
+                          <Button variant="secondary" icon={UserPlus} onClick={() => setShowCandidateForm(true)}>
                             Add candidate
                           </Button>
                         )
@@ -284,14 +284,6 @@ export default function RecruitmentPage() {
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function PostingForm({ onCreated }: { onCreated: () => void }) {
   const [title, setTitle] = useState("");
@@ -326,7 +318,7 @@ function PostingForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className={departments.length > 0 ? "" : "sm:col-span-2"}>
-          <label htmlFor="posting-title" className="label">
+          <label htmlFor="posting-title" className="c-label">
             Job title
           </label>
           <input
@@ -335,15 +327,15 @@ function PostingForm({ onCreated }: { onCreated: () => void }) {
             placeholder="e.g. Senior Frontend Engineer"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         {departments.length > 0 && (
           <div>
-            <label htmlFor="posting-department" className="label">
-              Department <span className="font-normal text-slate-400">(optional)</span>
+            <label htmlFor="posting-department" className="c-label">
+              Department <span className="font-normal text-secondary">(optional)</span>
             </label>
-            <select id="posting-department" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className="input">
+            <select id="posting-department" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className="c-select">
               <option value="">No department</option>
               {departments.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -354,7 +346,7 @@ function PostingForm({ onCreated }: { onCreated: () => void }) {
           </div>
         )}
         <div className="sm:col-span-2">
-          <label htmlFor="posting-description" className="label">
+          <label htmlFor="posting-description" className="c-label">
             Job description
           </label>
           <textarea
@@ -364,10 +356,10 @@ function PostingForm({ onCreated }: { onCreated: () => void }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="input"
+            className="c-textarea"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Post job
@@ -408,36 +400,36 @@ function CandidateForm({ jobPostingId, onCreated }: { jobPostingId: string; onCr
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor={`${uid}-first`} className="label">
+          <label htmlFor={`${uid}-first`} className="c-label">
             First name
           </label>
-          <input id={`${uid}-first`} required value={firstName} onChange={(e) => setFirstName(e.target.value)} className="input" />
+          <input id={`${uid}-first`} required value={firstName} onChange={(e) => setFirstName(e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor={`${uid}-last`} className="label">
+          <label htmlFor={`${uid}-last`} className="c-label">
             Last name
           </label>
-          <input id={`${uid}-last`} required value={lastName} onChange={(e) => setLastName(e.target.value)} className="input" />
+          <input id={`${uid}-last`} required value={lastName} onChange={(e) => setLastName(e.target.value)} className="c-input" />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor={`${uid}-email`} className="label">
+          <label htmlFor={`${uid}-email`} className="c-label">
             Email
           </label>
-          <input id={`${uid}-email`} required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
+          <input id={`${uid}-email`} required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="c-input" />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor={`${uid}-source`} className="label">
-            Source <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor={`${uid}-source`} className="c-label">
+            Source <span className="font-normal text-secondary">(optional)</span>
           </label>
           <input
             id={`${uid}-source`}
             placeholder="e.g. LinkedIn, referral"
             value={source}
             onChange={(e) => setSource(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" icon={UserPlus} loading={submitting}>
             Add candidate
@@ -490,8 +482,8 @@ function CandidateCard({
     <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium text-slate-900">{name}</p>
-          <p className="break-all text-xs text-slate-500">
+          <p className="font-medium text-heading">{name}</p>
+          <p className="break-all text-xs text-secondary">
             {candidate.email} {candidate.source && `· ${candidate.source}`}
           </p>
           <div className="mt-1.5">
@@ -499,7 +491,7 @@ function CandidateCard({
           </div>
         </div>
         <div className="w-36">
-          <label htmlFor={stageId} className="mb-1 block text-xs font-medium text-slate-500">
+          <label htmlFor={stageId} className="mb-1 block text-xs font-medium text-secondary">
             Stage
           </label>
           <select
@@ -507,7 +499,7 @@ function CandidateCard({
             value={candidate.stage}
             disabled={candidate.stage === "HIRED" || updatingStage}
             onChange={(e) => setStage(e.target.value as Candidate["stage"])}
-            className="input py-1.5 text-xs"
+            className="c-select py-1.5 text-xs"
           >
             {/* Hiring goes through "Confirm hire" (creates the employee), so HIRED is display-only. */}
             {STAGES.filter((s) => s !== "HIRED" || candidate.stage === "HIRED").map((s) => (
@@ -520,7 +512,7 @@ function CandidateCard({
       </div>
 
       {candidate.interviews && candidate.interviews.length > 0 && (
-        <ul className="mt-3 space-y-1 text-xs text-slate-500">
+        <ul className="mt-3 space-y-1 text-xs text-secondary">
           {candidate.interviews.map((iv) => (
             <li key={iv.id} className="flex items-center gap-1.5">
               <CalendarClock className="h-3.5 w-3.5 shrink-0" />
@@ -617,10 +609,10 @@ function InterviewForm({
     <Card className="mt-3 p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor={`${uid}-interviewer`} className="label">
+          <label htmlFor={`${uid}-interviewer`} className="c-label">
             Interviewer
           </label>
-          <select id={`${uid}-interviewer`} required value={interviewerId} onChange={(e) => setInterviewerId(e.target.value)} className="input">
+          <select id={`${uid}-interviewer`} required value={interviewerId} onChange={(e) => setInterviewerId(e.target.value)} className="c-select">
             <option value="">Select interviewer…</option>
             {employees.map((emp) => (
               <option key={emp.id} value={emp.id}>
@@ -630,7 +622,7 @@ function InterviewForm({
           </select>
         </div>
         <div>
-          <label htmlFor={`${uid}-when`} className="label">
+          <label htmlFor={`${uid}-when`} className="c-label">
             Date &amp; time
           </label>
           <input
@@ -639,10 +631,10 @@ function InterviewForm({
             type="datetime-local"
             value={scheduledAt}
             onChange={(e) => setScheduledAt(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" size="sm" loading={submitting}>
             Schedule
@@ -689,18 +681,18 @@ function HireForm({ candidateId, candidateName, onHired }: { candidateId: string
     <Card className="mt-3 p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label htmlFor={`${uid}-designation`} className="label">
-            Designation <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor={`${uid}-designation`} className="c-label">
+            Designation <span className="font-normal text-secondary">(optional)</span>
           </label>
           <input
             id={`${uid}-designation`}
             placeholder="e.g. Software Engineer"
             value={designation}
             onChange={(e) => setDesignation(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         {access && <AccessNotice result={access} kind="hired" />}
         {!access && (
           <div className="sm:col-span-2">

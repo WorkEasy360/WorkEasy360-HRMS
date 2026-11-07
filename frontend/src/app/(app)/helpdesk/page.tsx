@@ -5,7 +5,7 @@ import { Inbox, LifeBuoy, MessageSquarePlus } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { HelpDeskTicket } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard, type Tone } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate } from "@/components/format";
 
@@ -16,11 +16,11 @@ const STATUS_LABELS: Record<HelpDeskTicket["status"], string> = {
   CLOSED: "Closed",
 };
 
-const STATUS_STYLES: Record<HelpDeskTicket["status"], string> = {
-  OPEN: "bg-amber-100 text-amber-800",
-  IN_PROGRESS: "bg-blue-100 text-blue-800",
-  RESOLVED: "bg-green-100 text-green-800",
-  CLOSED: "bg-slate-100 text-slate-600",
+const STATUS_TONES: Record<HelpDeskTicket["status"], Tone | undefined> = {
+  OPEN: "warning",
+  IN_PROGRESS: "info",
+  RESOLVED: "success",
+  CLOSED: undefined,
 };
 
 export default function HelpDeskPage() {
@@ -103,14 +103,14 @@ export default function HelpDeskPage() {
       )}
 
       {!loading && myTickets.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
-          <SummaryTile label="Open" value={openMine} tone="text-amber-600" />
-          <SummaryTile label="Resolved" value={resolvedMine} tone="text-emerald-600" />
+        <div className="c-stats">
+          <StatCard label="Open" value={openMine} valueTone="warning" />
+          <StatCard label="Resolved" value={resolvedMine} valueTone="success" />
         </div>
       )}
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-slate-500">My tickets</h2>
+        <h2 className="text-sm font-medium text-secondary">My tickets</h2>
         {loading ? (
           <LoadingRows rows={3} />
         ) : myTickets.length === 0 ? (
@@ -121,7 +121,7 @@ export default function HelpDeskPage() {
               description="Having trouble with something? Raise a ticket and the right team will pick it up."
               action={
                 !showForm && (
-                  <Button icon={MessageSquarePlus} onClick={() => setShowForm(true)}>
+                  <Button variant="secondary" icon={MessageSquarePlus} onClick={() => setShowForm(true)}>
                     New ticket
                   </Button>
                 )
@@ -135,7 +135,7 @@ export default function HelpDeskPage() {
 
       {canManage && (
         <section className="space-y-3">
-          <h2 className="text-sm font-medium text-slate-500">All tickets</h2>
+          <h2 className="text-sm font-medium text-secondary">All tickets</h2>
           {loading ? (
             <LoadingRows rows={3} />
           ) : allTickets.length === 0 ? (
@@ -151,11 +151,11 @@ export default function HelpDeskPage() {
               <Card key={t.id} className="p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <p className="font-medium text-slate-900">{t.subject}</p>
-                    <p className="text-sm text-slate-500">
+                    <p className="font-medium text-heading">{t.subject}</p>
+                    <p className="text-sm text-secondary">
                       {t.employee?.firstName} {t.employee?.lastName} · {t.category} · {formatDate(t.createdAt)}
                     </p>
-                    <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">{t.description}</p>
+                    <p className="mt-1 whitespace-pre-line break-words text-sm text-body">{t.description}</p>
                   </div>
                   <div className="shrink-0">
                     <label htmlFor={`ticket-status-${t.id}`} className="sr-only">
@@ -166,7 +166,7 @@ export default function HelpDeskPage() {
                       value={t.status}
                       disabled={updatingId === t.id}
                       onChange={(e) => updateStatus(t.id, e.target.value as HelpDeskTicket["status"])}
-                      className="input w-auto py-1 text-xs"
+                      className="c-select w-auto py-1 text-xs"
                     >
                       <option value="OPEN">Open</option>
                       <option value="IN_PROGRESS">In progress</option>
@@ -184,29 +184,21 @@ export default function HelpDeskPage() {
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function TicketCard({ ticket }: { ticket: HelpDeskTicket }) {
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 font-medium text-slate-900">{ticket.subject}</p>
-        <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[ticket.status]}`}>
+        <p className="min-w-0 font-medium text-heading">{ticket.subject}</p>
+        <span className="c-badge shrink-0" data-tone={STATUS_TONES[ticket.status]}>
           {STATUS_LABELS[ticket.status]}
         </span>
       </div>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm text-secondary">
         {ticket.category} · Raised {formatDate(ticket.createdAt)}
         {ticket.resolvedAt && ` · Resolved ${formatDate(ticket.resolvedAt)}`}
       </p>
-      <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">{ticket.description}</p>
+      <p className="mt-1 whitespace-pre-line break-words text-sm text-body">{ticket.description}</p>
     </Card>
   );
 }
@@ -236,10 +228,10 @@ function TicketForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="ticket-category" className="label">
+          <label htmlFor="ticket-category" className="c-label">
             Category
           </label>
-          <select id="ticket-category" value={category} onChange={(e) => setCategory(e.target.value)} className="input">
+          <select id="ticket-category" value={category} onChange={(e) => setCategory(e.target.value)} className="c-select">
             <option value="IT">IT</option>
             <option value="HR">HR</option>
             <option value="Payroll">Payroll</option>
@@ -248,7 +240,7 @@ function TicketForm({ onCreated }: { onCreated: () => void }) {
           </select>
         </div>
         <div>
-          <label htmlFor="ticket-subject" className="label">
+          <label htmlFor="ticket-subject" className="c-label">
             Subject
           </label>
           <input
@@ -257,11 +249,11 @@ function TicketForm({ onCreated }: { onCreated: () => void }) {
             placeholder="e.g. VPN not connecting"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor="ticket-description" className="label">
+          <label htmlFor="ticket-description" className="c-label">
             Description
           </label>
           <textarea
@@ -271,10 +263,10 @@ function TicketForm({ onCreated }: { onCreated: () => void }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="input"
+            className="c-textarea"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Submit ticket

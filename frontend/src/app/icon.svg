@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- The brand mark, in the logo green (brand.logo / --we-logo). That green is
+       for the mark only, never for UI. Replace the path with the vector traced
+       from assets/logo.jpg when the artwork is available. -->
+  <rect width="32" height="32" rx="8" fill="#00BF62" />
+  <path d="M8 12.5 12.2 22h1.6L16 16.4l2.2 5.6h1.6L24 12.5" fill="none" stroke="#1B3040"
+        stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

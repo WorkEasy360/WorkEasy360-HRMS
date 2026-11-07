@@ -5,10 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Bell, CheckSquare, ChevronDown, Loader2, LogOut, Menu, Search, ShieldCheck, ShieldOff, User, X } from "lucide-react";
 import { CommandPalette } from "@/components/CommandPalette";
-import { EmptyState } from "@/components/ui";
 import { useAuth } from "@/lib/auth-context";
 import { canSee, findNavItem, visibleGroups, type NavItem } from "@/lib/navigation";
 import { usePendingApprovals, type PendingCounts } from "@/lib/use-pending-approvals";
+import { EmptyState, IconButton, Lockup, ThemeToggle } from "@/ui";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout, hasPermission } = useAuth();
@@ -35,12 +35,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     setBellOpen(false);
   }
 
-  // Ctrl/Cmd+K opens search from anywhere.
+  // Ctrl/Cmd+K or "/" opens search from anywhere.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      } else if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setPaletteOpen(true);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -55,8 +59,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (loading || !user) {
     return (
-      <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-500">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading your workspace…
+      <div className="flex flex-1 items-center justify-center gap-2 text-sm text-secondary">
+        <Loader2 className="size-4 animate-spin" /> Loading your workspace…
       </div>
     );
   }
@@ -77,11 +81,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   const sidebar = (
-    <nav aria-label="Main" className="flex-1 space-y-1">
+    <nav aria-label="Main" className="c-nav flex-1 px-3 pb-4">
       {groups.map((group, i) => {
         if (!group.title) {
           return (
-            <div key={i} className="space-y-0.5 pb-2">
+            <div key={i} className="c-nav pb-2">
               {group.items.map((item) => (
                 <NavLink key={item.href} item={item} active={item.href === activeItem?.href} />
               ))}
@@ -91,16 +95,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         const isOpen = group === activeGroup || !collapsed.has(group.title);
         return (
           <div key={i}>
-            <button
-              onClick={() => toggleGroup(group.title!)}
-              aria-expanded={isOpen}
-              className="flex w-full items-center justify-between rounded-md px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200"
-            >
+            <button onClick={() => toggleGroup(group.title!)} aria-expanded={isOpen} className="c-nav-group-label">
               {group.title}
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+              <ChevronDown className={`size-3.5 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
             </button>
             {isOpen && (
-              <div className="space-y-0.5 pb-2">
+              <div className="c-nav pb-2">
                 {group.items.map((item) => (
                   <NavLink key={item.href} item={item} active={item.href === activeItem?.href} />
                 ))}
@@ -113,34 +113,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
 
   const brand = (
-    <Link href="/dashboard" className="mb-4 flex items-center gap-2 px-2 py-2">
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">W</div>
-      <span className="text-base font-semibold text-white">WorkEasy360</span>
+    <Link href="/dashboard" className="flex h-topbar shrink-0 items-center px-5">
+      <Lockup onDark />
     </Link>
   );
 
   return (
-    <div className="flex min-h-screen flex-1 bg-slate-50">
-      <a href="#main" className="sr-only z-50 rounded bg-white px-3 py-2 text-sm focus:not-sr-only focus:fixed focus:left-2 focus:top-2">
+    <div className="flex min-h-screen flex-1">
+      <a href="#main" className="sr-only z-50 rounded-md bg-surface px-3 py-2 text-sm focus:not-sr-only focus:fixed focus:left-2 focus:top-2">
         Skip to content
       </a>
 
-      {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto bg-[#0b1220] p-3 lg:flex">
+      {/* Desktop sidebar. Below 960px it becomes the drawer below. */}
+      <aside
+        data-region="primary"
+        className="sticky top-0 hidden h-screen w-sidebar shrink-0 flex-col overflow-y-auto bg-navy shell:flex"
+      >
         {brand}
         {sidebar}
       </aside>
 
       {/* Mobile drawer */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-slate-900/50" onClick={() => setDrawerOpen(false)} />
-          <aside className="relative flex h-full w-64 flex-col overflow-y-auto bg-[#0b1220] p-3 shadow-xl">
+        <div className="fixed inset-0 z-40 shell:hidden">
+          <div className="c-scrim" onClick={() => setDrawerOpen(false)} />
+          <aside data-region="primary" className="c-drawer">
             <div className="flex items-start justify-between">
               {brand}
-              <button onClick={() => setDrawerOpen(false)} aria-label="Close menu" className="mt-2 rounded p-1 text-slate-400 hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
+              <IconButton icon={X} onClick={() => setDrawerOpen(false)} aria-label="Close menu" className="mt-2 mr-2" />
             </div>
             {sidebar}
           </aside>
@@ -148,56 +148,63 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-2.5 backdrop-blur sm:px-6">
-          <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-slate-500">
-            <button onClick={() => setDrawerOpen(true)} aria-label="Open menu" className="-ml-1 rounded-md p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden">
-              <Menu className="h-5 w-5" />
+        <header className="sticky top-0 z-30 flex h-topbar shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 sm:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <IconButton icon={Menu} onClick={() => setDrawerOpen(true)} aria-label="Open menu" className="-ml-2 shell:hidden" />
+
+            {/* The workspace: one company per signed-in user, so this is a
+                breadcrumb rather than a switcher. */}
+            <div className="hidden min-w-0 items-center gap-2 text-sm font-medium text-secondary sm:flex">
+              {activeItem && (
+                <>
+                  <activeItem.icon className="size-4 shrink-0" strokeWidth={2} aria-hidden />
+                  {activeGroup && (
+                    <>
+                      <span className="truncate">{activeGroup.title}</span>
+                      <span aria-hidden>/</span>
+                    </>
+                  )}
+                  <span className="truncate text-heading">{activeItem.label}</span>
+                </>
+              )}
+            </div>
+
+            <button onClick={() => setPaletteOpen(true)} className="c-search ml-auto sm:w-64" aria-label="Search">
+              <Search className="size-4 shrink-0" aria-hidden />
+              <span className="hidden flex-1 text-left sm:inline">Search…</span>
+              <kbd className="c-kbd hidden sm:inline">Ctrl K</kbd>
             </button>
-            {activeItem && (
-              <>
-                <activeItem.icon className="hidden h-4 w-4 shrink-0 text-slate-400 sm:block" strokeWidth={2} />
-                {activeGroup && <span className="hidden truncate sm:inline">{activeGroup.title}</span>}
-                {activeGroup && <span className="hidden text-slate-300 sm:inline">/</span>}
-                <span className="truncate text-slate-900">{activeItem.label}</span>
-              </>
-            )}
           </div>
 
-          <div className="flex items-center justify-end gap-1.5 sm:gap-3">
-            <button
-              onClick={() => setPaletteOpen(true)}
-              className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 py-1.5 pl-2.5 pr-2 text-sm text-slate-400 hover:border-slate-300 sm:w-64"
-              aria-label="Search"
-            >
-              <Search className="h-4 w-4" />
-              <span className="hidden flex-1 text-left sm:inline">Search…</span>
-              <kbd className="hidden rounded border border-slate-200 bg-white px-1.5 text-[10px] font-medium sm:inline">Ctrl K</kbd>
-            </button>
-
+          <div className="flex shrink-0 items-center gap-1">
             <ApprovalsBell open={bellOpen} setOpen={setBellOpen} />
+            <ThemeToggle />
 
             <div className="relative">
               <button
                 onClick={() => setMenuOpen((v) => !v)}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
-                className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 hover:bg-slate-100 sm:pr-2"
+                aria-label={`Account menu for ${displayName}`}
+                className="flex items-center gap-2 rounded-full p-1 hover:bg-muted sm:pr-2"
               >
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">{initials}</div>
-                <span className="hidden max-w-[10rem] truncate text-sm font-medium text-slate-700 md:inline">{displayName}</span>
-                <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 md:block" />
+                <span className="flex size-7 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent-strong">
+                  {initials}
+                </span>
+                <span className="hidden max-w-40 truncate text-sm font-medium text-body md:inline">{displayName}</span>
+                <ChevronDown className="hidden size-3.5 text-secondary md:block" aria-hidden />
               </button>
               {menuOpen && (
                 <>
                   <div className="fixed inset-0 z-0" onClick={() => setMenuOpen(false)} />
-                  <div role="menu" className="absolute right-0 top-full z-10 mt-2 w-64 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-                    <div className="border-b border-slate-100 px-3 py-2.5">
-                      <p className="truncate text-sm font-medium text-slate-900">{displayName}</p>
-                      <p className="truncate text-xs text-slate-500">{user.email}</p>
+                  <div role="menu" className="c-menu absolute right-0 top-full z-10 mt-2 w-64">
+                    <div className="c-menu-head">
+                      <p className="truncate text-sm font-medium text-heading">{displayName}</p>
+                      <p className="truncate text-xs text-secondary">{user.email}</p>
                       {user.roles.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {user.roles.map((r) => (
-                            <span key={r} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                            <span key={r} className="c-tag">
                               {r}
                             </span>
                           ))}
@@ -210,13 +217,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       icon={user.totpEnabled ? ShieldCheck : ShieldOff}
                       label={user.totpEnabled ? "Security" : "Security · turn on 2FA"}
                     />
-                    <div className="my-1 border-t border-slate-100" />
-                    <button
-                      role="menuitem"
-                      onClick={logout}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                    >
-                      <LogOut className="h-4 w-4" strokeWidth={2} />
+                    <hr className="c-menu-sep" />
+                    <button role="menuitem" onClick={logout} className="c-menu-item" data-tone="danger">
+                      <LogOut strokeWidth={2} aria-hidden />
                       Sign out
                     </button>
                   </div>
@@ -227,15 +230,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {user.mustChangePassword && pathname !== "/settings/security" && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 sm:px-6">
-            <span>You&apos;re signed in with a temporary password. Choose your own to keep your account secure.</span>
-            <Link href="/settings/security" className="font-medium text-amber-900 underline underline-offset-2">
-              Set my password
-            </Link>
+          <div className="px-4 pt-4 sm:px-6">
+            <div className="c-alert" data-tone="warning">
+              <span>You&apos;re signed in with a temporary password. Choose your own to keep your account secure.</span>
+              <Link href="/settings/security" className="c-link shrink-0">
+                Set my password
+              </Link>
+            </div>
           </div>
         )}
 
-        <main id="main" className="mx-auto w-full max-w-7xl flex-1 p-4 text-slate-900 sm:p-6">
+        {/* Step 1 of the page contract, hoisted here so no page can forget it. */}
+        <main id="main" className="c-page flex-1">
           {allowed ? (
             children
           ) : (
@@ -244,7 +250,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               title="You don't have access to this page"
               description="Ask your HR administrator if you think you should. In the meantime, here's the way back."
               action={
-                <Link href="/dashboard" className="text-sm font-medium text-blue-600 hover:underline">
+                <Link href="/dashboard" className="c-link">
                   Go to Home
                 </Link>
               }
@@ -271,13 +277,13 @@ function ApprovalsBell({ open, setOpen }: { open: boolean; setOpen: (v: boolean)
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="relative rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600"
+        className="c-btn-ghost c-btn-icon relative"
         aria-label={counts.total ? `${counts.total} pending approvals` : "Notifications"}
         aria-expanded={open}
       >
-        <Bell className="h-5 w-5" strokeWidth={2} />
+        <Bell className="size-icon" strokeWidth={2} aria-hidden />
         {counts.total > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+          <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-xs font-semibold text-on-danger">
             {counts.total > 99 ? "99+" : counts.total}
           </span>
         )}
@@ -285,27 +291,30 @@ function ApprovalsBell({ open, setOpen }: { open: boolean; setOpen: (v: boolean)
       {open && (
         <>
           <div className="fixed inset-0 z-0" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-10 mt-2 w-72 rounded-lg border border-slate-200 bg-white shadow-lg">
-            <p className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900">Waiting on you</p>
+          <div className="c-menu absolute right-0 top-full z-10 mt-2 w-72">
+            <p className="c-menu-head text-sm font-semibold text-heading">Waiting on you</p>
             {counts.total === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-slate-500">You&apos;re all caught up.</p>
+              <p className="px-4 py-6 text-center text-sm text-secondary">You&apos;re all caught up.</p>
             ) : (
-              <ul className="py-1">
+              <ul>
                 {rows
                   .filter((r) => counts[r.key] > 0)
                   .map((r) => (
                     <li key={r.key}>
-                      <Link href="/approvals" className="flex items-center justify-between px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                      <Link href="/approvals" className="c-menu-item justify-between">
                         <span className="flex items-center gap-2">
-                          <CheckSquare className="h-4 w-4 text-slate-400" /> {r.label}
+                          <CheckSquare strokeWidth={2} aria-hidden /> {r.label}
                         </span>
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">{counts[r.key]}</span>
+                        <span className="c-badge" data-tone="warning">
+                          {counts[r.key]}
+                        </span>
                       </Link>
                     </li>
                   ))}
               </ul>
             )}
-            <Link href="/approvals" className="block border-t border-slate-100 px-4 py-2 text-center text-xs font-medium text-blue-600 hover:bg-slate-50">
+            <hr className="c-menu-sep" />
+            <Link href="/approvals" className="c-menu-item justify-center text-xs font-medium">
               Open approvals
             </Link>
           </div>
@@ -317,8 +326,8 @@ function ApprovalsBell({ open, setOpen }: { open: boolean; setOpen: (v: boolean)
 
 function MenuLink({ href, icon: Icon, label }: { href: string; icon: NavItem["icon"]; label: string }) {
   return (
-    <Link role="menuitem" href={href} className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900">
-      <Icon className="h-4 w-4" strokeWidth={2} />
+    <Link role="menuitem" href={href} className="c-menu-item">
+      <Icon strokeWidth={2} aria-hidden />
       {label}
     </Link>
   );
@@ -327,14 +336,8 @@ function MenuLink({ href, icon: Icon, label }: { href: string; icon: NavItem["ic
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   const Icon = item.icon;
   return (
-    <Link
-      href={item.href}
-      aria-current={active ? "page" : undefined}
-      className={`group flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-        active ? "bg-blue-600 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"
-      }`}
-    >
-      <Icon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-slate-400 group-hover:text-white"}`} strokeWidth={2} />
+    <Link href={item.href} aria-current={active ? "page" : undefined} className="c-nav-item">
+      <Icon strokeWidth={2} aria-hidden />
       {item.label}
     </Link>
   );

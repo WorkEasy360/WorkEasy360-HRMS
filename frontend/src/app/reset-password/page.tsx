@@ -7,7 +7,7 @@ import { Loader2, LinkIcon } from "lucide-react";
 import { AuthShell } from "@/components/AuthShell";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { PasswordInput, PasswordStrength, passwordIssues } from "@/components/PasswordInput";
-import { Button, ErrorBanner } from "@/components/ui";
+import { Button, ErrorBanner } from "@/ui";
 import { apiFetch } from "@/lib/api";
 
 type TokenInfo = { purpose: "INVITE" | "RESET"; email: string; organizationSlug: string; organizationName: string };
@@ -68,17 +68,17 @@ export default function ResetPasswordPage() {
     return (
       <AuthShell title="This link doesn't work" subtitle="It may have expired or already been used.">
         <div className="space-y-4">
-          <div className="flex items-start gap-3 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
-            <LinkIcon className="h-5 w-5 shrink-0 text-amber-600" />
-            <p>{linkError}</p>
+          <div className="c-alert" data-tone="warning">
+            <LinkIcon strokeWidth={2} aria-hidden />
+            <p className="flex-1">{linkError}</p>
           </div>
           <Link
             href="/forgot-password"
-            className="flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+            className="c-btn-primary w-full"
           >
             Request a new link
           </Link>
-          <Link href="/login" className="block text-center text-sm text-slate-500 hover:text-slate-800">
+          <Link href="/login" className="block text-center text-sm text-secondary hover:text-heading">
             Back to sign in
           </Link>
         </div>
@@ -89,7 +89,7 @@ export default function ResetPasswordPage() {
   if (!info) {
     return (
       <AuthShell title="Checking your link…" subtitle="One moment.">
-        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+        <Loader2 className="h-5 w-5 animate-spin text-secondary" />
       </AuthShell>
     );
   }
@@ -102,18 +102,18 @@ export default function ResetPasswordPage() {
     >
       <form onSubmit={onSubmit} className="space-y-4">
         {isInvite && (
-          <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-            You&apos;ll sign in with organization ID <strong className="text-slate-900">{info.organizationSlug}</strong> and{" "}
-            <strong className="text-slate-900">{info.email}</strong>.
+          <div className="rounded-md bg-muted p-3 text-sm text-body">
+            You&apos;ll sign in with organization ID <strong className="text-heading">{info.organizationSlug}</strong> and{" "}
+            <strong className="text-heading">{info.email}</strong>.
           </div>
         )}
         <div>
-          <label htmlFor="new-password" className="label">New password</label>
+          <label htmlFor="new-password" className="c-label">New password</label>
           <PasswordInput id="new-password" required autoComplete="new-password" value={password} onChange={setPassword} />
           <PasswordStrength password={password} />
         </div>
         <div>
-          <label htmlFor="confirm-password" className="label">Confirm password</label>
+          <label htmlFor="confirm-password" className="c-label">Confirm password</label>
           <PasswordInput id="confirm-password" required autoComplete="new-password" value={confirmPassword} onChange={setConfirmPassword} />
         </div>
         <ErrorBanner message={error} />

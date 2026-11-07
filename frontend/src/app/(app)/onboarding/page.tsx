@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2, Circle, ClipboardList, ListPlus } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Employee, OnboardingTask } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 
 export default function OnboardingPage() {
@@ -77,10 +77,10 @@ export default function OnboardingPage() {
       )}
 
       {!loading && tasks.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <SummaryTile label="New hires" value={groups.length} tone="text-slate-900" />
-          <SummaryTile label="Open tasks" value={tasks.length - doneCount} tone="text-amber-600" />
-          <SummaryTile label="Completed" value={doneCount} tone="text-emerald-600" />
+        <div className="c-stats">
+          <StatCard label="New hires" value={groups.length} />
+          <StatCard label="Open tasks" value={tasks.length - doneCount} valueTone="warning" />
+          <StatCard label="Completed" value={doneCount} valueTone="success" />
         </div>
       )}
 
@@ -94,7 +94,7 @@ export default function OnboardingPage() {
             description="Add checklist tasks (laptop setup, paperwork, induction…) for employees who are onboarding."
             action={
               !showForm && (
-                <Button icon={ListPlus} onClick={() => setShowForm(true)}>
+                <Button variant="secondary" icon={ListPlus} onClick={() => setShowForm(true)}>
                   Add task
                 </Button>
               )
@@ -109,30 +109,30 @@ export default function OnboardingPage() {
             return (
               <Card key={employeeLabel} className="p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium text-slate-900">{employeeLabel}</p>
-                  <span className="text-xs font-medium text-slate-500">
+                  <p className="font-medium text-heading">{employeeLabel}</p>
+                  <span className="text-xs font-medium text-secondary">
                     {done}/{employeeTasks.length} done
                   </span>
                 </div>
                 <div
-                  className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
+                  className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-muted"
                   role="progressbar"
                   aria-valuenow={pct}
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-label={`${employeeLabel} onboarding progress`}
                 >
-                  <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                  <div className="h-full rounded-full bg-success transition-all" style={{ width: `${pct}%` }} />
                 </div>
                 <ul className="space-y-1.5 text-sm">
                   {employeeTasks.map((t) => (
                     <li key={t.id} className="flex items-start gap-2">
                       {t.done ? (
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" aria-label="Done" />
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-label="Done" />
                       ) : (
-                        <Circle className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" aria-label="Not done" />
+                        <Circle className="mt-0.5 h-4 w-4 shrink-0 text-secondary" aria-label="Not done" />
                       )}
-                      <span className={t.done ? "text-slate-400 line-through" : "text-slate-700"}>{t.title}</span>
+                      <span className={t.done ? "text-secondary line-through" : "text-body"}>{t.title}</span>
                     </li>
                   ))}
                 </ul>
@@ -145,14 +145,6 @@ export default function OnboardingPage() {
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function AddTaskForm({ employees, onCreated }: { employees: Employee[]; onCreated: () => void }) {
   const [employeeId, setEmployeeId] = useState("");
@@ -178,10 +170,10 @@ function AddTaskForm({ employees, onCreated }: { employees: Employee[]; onCreate
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="onb-employee" className="label">
+          <label htmlFor="onb-employee" className="c-label">
             Employee
           </label>
-          <select id="onb-employee" required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="input">
+          <select id="onb-employee" required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="c-select">
             <option value="">Select an onboarding employee…</option>
             {employees.map((emp) => (
               <option key={emp.id} value={emp.id}>
@@ -190,11 +182,11 @@ function AddTaskForm({ employees, onCreated }: { employees: Employee[]; onCreate
             ))}
           </select>
           {employees.length === 0 && (
-            <p className="mt-1 text-xs text-slate-500">No employees are currently in onboarding status.</p>
+            <p className="mt-1 text-xs text-secondary">No employees are currently in onboarding status.</p>
           )}
         </div>
         <div>
-          <label htmlFor="onb-title" className="label">
+          <label htmlFor="onb-title" className="c-label">
             Task title
           </label>
           <input
@@ -203,10 +195,10 @@ function AddTaskForm({ employees, onCreated }: { employees: Employee[]; onCreate
             placeholder="e.g. Issue laptop"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Add task

@@ -5,7 +5,7 @@ import { CalendarPlus, CalendarX2 } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { LeaveRequest, LeaveType } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDateRange } from "@/components/format";
 
@@ -94,10 +94,10 @@ export default function MyLeavePage() {
       )}
 
       {!loading && requests.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <SummaryTile label="Pending" value={pending.length} tone="text-amber-600" />
-          <SummaryTile label="Approved" value={approved.length} tone="text-emerald-600" />
-          <SummaryTile label="Days approved" value={approvedDays} tone="text-slate-900" />
+        <div className="c-stats">
+          <StatCard label="Pending" value={pending.length} valueTone="warning" />
+          <StatCard label="Approved" value={approved.length} valueTone="success" />
+          <StatCard label="Days approved" value={approvedDays} />
         </div>
       )}
 
@@ -111,7 +111,7 @@ export default function MyLeavePage() {
             description="When you need time off, submit a request and your manager will be notified to approve it."
             action={
               !showForm && (
-                <Button icon={CalendarPlus} onClick={() => setShowForm(true)}>
+                <Button variant="secondary" icon={CalendarPlus} onClick={() => setShowForm(true)}>
                   Request leave
                 </Button>
               )
@@ -119,8 +119,8 @@ export default function MyLeavePage() {
           />
         </Card>
       ) : (
-        <div className="table-wrap">
-          <table>
+        <div className="c-table-wrap">
+          <table className="c-table">
             <thead>
               <tr>
                 <th>Type</th>
@@ -135,9 +135,9 @@ export default function MyLeavePage() {
             <tbody>
               {requests.map((r) => (
                 <tr key={r.id}>
-                  <td className="font-medium text-slate-900">{r.leaveType.name}</td>
-                  <td className="whitespace-nowrap text-slate-500">{formatDateRange(r.startDate, r.endDate)}</td>
-                  <td className="text-slate-500">{r.days}</td>
+                  <td className="font-medium text-heading">{r.leaveType.name}</td>
+                  <td className="whitespace-nowrap text-secondary">{formatDateRange(r.startDate, r.endDate)}</td>
+                  <td className="text-secondary">{r.days}</td>
                   <td>
                     <StatusBadge status={r.status} />
                   </td>
@@ -146,7 +146,7 @@ export default function MyLeavePage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                        className="text-danger-text hover:bg-danger-soft hover:text-danger-text"
                         loading={cancellingId === r.id}
                         onClick={() => cancel(r)}
                       >
@@ -164,14 +164,6 @@ export default function MyLeavePage() {
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p>
-    </Card>
-  );
-}
 
 function LeaveRequestForm({ leaveTypes, onCreated }: { leaveTypes: LeaveType[]; onCreated: () => void }) {
   const [leaveTypeId, setLeaveTypeId] = useState(leaveTypes[0]?.id ?? "");
@@ -202,10 +194,10 @@ function LeaveRequestForm({ leaveTypes, onCreated }: { leaveTypes: LeaveType[]; 
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="leave-type" className="label">
+          <label htmlFor="leave-type" className="c-label">
             Leave type
           </label>
-          <select id="leave-type" required value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)} className="input">
+          <select id="leave-type" required value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)} className="c-select">
             {leaveTypes.map((lt) => (
               <option key={lt.id} value={lt.id}>
                 {lt.name}
@@ -215,13 +207,13 @@ function LeaveRequestForm({ leaveTypes, onCreated }: { leaveTypes: LeaveType[]; 
         </div>
         <div className="hidden sm:block" />
         <div>
-          <label htmlFor="leave-start" className="label">
+          <label htmlFor="leave-start" className="c-label">
             Start date
           </label>
-          <input id="leave-start" required type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
+          <input id="leave-start" required type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="leave-end" className="label">
+          <label htmlFor="leave-end" className="c-label">
             End date
           </label>
           <input
@@ -231,16 +223,16 @@ function LeaveRequestForm({ leaveTypes, onCreated }: { leaveTypes: LeaveType[]; 
             min={startDate || undefined}
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor="leave-reason" className="label">
-            Reason <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="leave-reason" className="c-label">
+            Reason <span className="font-normal text-secondary">(optional)</span>
           </label>
-          <input id="leave-reason" value={reason} onChange={(e) => setReason(e.target.value)} className="input" />
+          <input id="leave-reason" value={reason} onChange={(e) => setReason(e.target.value)} className="c-input" />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting} disabled={!leaveTypeId}>
             Submit request

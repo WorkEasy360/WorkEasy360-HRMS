@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { CalendarCheck, CalendarClock, LogIn, LogOut } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { AttendanceRecord } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, Skeleton } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, Skeleton, StatCard, type Tone } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate, formatTime, localIsoDate } from "@/components/format";
 
@@ -67,11 +67,11 @@ export default function MyAttendancePage() {
 
   const checkedIn = !!todayRecord?.checkInAt;
   const checkedOut = !!todayRecord?.checkOutAt;
-  const todayStatus = checkedOut
-    ? { label: "Day complete", tone: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" }
+  const todayStatus: { label: string; tone?: Tone } = checkedOut
+    ? { label: "Day complete", tone: "success" }
     : checkedIn
-      ? { label: "Checked in", tone: "bg-blue-50 text-blue-700 ring-blue-600/20" }
-      : { label: "Not checked in", tone: "bg-slate-100 text-slate-600 ring-slate-500/20" };
+      ? { label: "Checked in", tone: "info" }
+      : { label: "Not checked in" };
 
   const now = new Date();
   const monthPrefix = todayIso.slice(0, 7);
@@ -88,14 +88,14 @@ export default function MyAttendancePage() {
         <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Today</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-secondary">Today</p>
               {!loading && (
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${todayStatus.tone}`}>
+                <span className="c-badge" data-tone={todayStatus.tone}>
                   {todayStatus.label}
                 </span>
               )}
             </div>
-            <p className="mt-1 text-lg font-semibold text-slate-900">
+            <p className="mt-1 text-lg font-semibold text-heading">
               {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
             </p>
             {loading ? (
@@ -130,22 +130,26 @@ export default function MyAttendancePage() {
                 Check out
               </Button>
             ) : (
-              <p className="text-sm text-slate-500">You&apos;re all done for today.</p>
+              <p className="text-sm text-secondary">You&apos;re all done for today.</p>
             )}
           </div>
         </div>
-        {error && <p className="border-t border-red-100 bg-red-50 px-5 py-2 text-sm text-red-600 sm:px-6">{error}</p>}
+        {error && (
+          <p className="c-alert rounded-none border-x-0 border-b-0" data-tone="danger">
+            {error}
+          </p>
+        )}
       </Card>
 
       {!loading && records.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
-          <SummaryTile label="Days this month" value={String(thisMonth.length)} />
-          <SummaryTile label="Hours this month" value={formatHours(monthHours)} />
+        <div className="c-stats">
+          <StatCard label="Days this month" value={String(thisMonth.length)} />
+          <StatCard label="Hours this month" value={formatHours(monthHours)} />
         </div>
       )}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-slate-500">History</h2>
+        <h2 className="text-sm font-medium text-secondary">History</h2>
         {loading ? (
           <LoadingRows rows={5} />
         ) : records.length === 0 ? (
@@ -157,8 +161,8 @@ export default function MyAttendancePage() {
             />
           </Card>
         ) : (
-          <div className="table-wrap">
-            <table>
+          <div className="c-table-wrap">
+            <table className="c-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -170,15 +174,15 @@ export default function MyAttendancePage() {
               <tbody>
                 {records.map((r) => (
                   <tr key={r.id}>
-                    <td className="whitespace-nowrap font-medium text-slate-900">
+                    <td className="whitespace-nowrap font-medium text-heading">
                       <span className="inline-flex items-center gap-1.5">
                         {formatDate(r.date)}
-                        {r.date.slice(0, 10) === todayIso && <CalendarCheck className="h-3.5 w-3.5 text-blue-600" aria-label="Today" />}
+                        {r.date.slice(0, 10) === todayIso && <CalendarCheck className="h-3.5 w-3.5 text-link" aria-label="Today" />}
                       </span>
                     </td>
-                    <td className="text-slate-500">{formatTime(r.checkInAt)}</td>
-                    <td className="text-slate-500">{formatTime(r.checkOutAt)}</td>
-                    <td className="text-slate-500">{formatHours(workedHours(r))}</td>
+                    <td className="text-secondary">{formatTime(r.checkInAt)}</td>
+                    <td className="text-secondary">{formatTime(r.checkOutAt)}</td>
+                    <td className="text-secondary">{formatHours(workedHours(r))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -193,20 +197,12 @@ export default function MyAttendancePage() {
 function TimeStat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="text-xl font-semibold tabular-nums text-slate-900">{value}</dd>
+      <dt className="text-xs text-secondary">{label}</dt>
+      <dd className="c-stat-value">{value}</dd>
     </div>
   );
 }
 
-function SummaryTile({ label, value }: { label: string; value: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
-    </Card>
-  );
-}
 
 /** Hours between check-in and check-out; null when the day is not complete. */
 function workedHours(r: AttendanceRecord): number | null {

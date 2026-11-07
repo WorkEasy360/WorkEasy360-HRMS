@@ -6,7 +6,7 @@ import { ArrowLeft, KeyRound, Pencil, Save, UserX } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Department, Employee, EmployeeStatus } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, PageHeader, Skeleton } from "@/components/ui";
+import { Button, Card, EmptyState, PageHeader, Skeleton } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { useAuth } from "@/lib/auth-context";
 import { useAppConfig } from "@/lib/use-app-config";
@@ -30,7 +30,7 @@ export default function EmployeeProfilePage(props: PageProps<"/people/[id]">) {
   }, [id]);
 
   const backLink = (
-    <Link href="/people" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline">
+    <Link href="/people" className="c-back">
       <ArrowLeft className="h-4 w-4" />
       Back to directory
     </Link>
@@ -87,7 +87,7 @@ export default function EmployeeProfilePage(props: PageProps<"/people/[id]">) {
       <div className="flex items-start gap-4">
         <div
           aria-hidden="true"
-          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-lg font-semibold text-blue-700"
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent-soft text-lg font-semibold text-accent-strong"
         >
           {initials}
         </div>
@@ -111,7 +111,7 @@ export default function EmployeeProfilePage(props: PageProps<"/people/[id]">) {
       ) : (
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-900">Employee details</h2>
+            <h2 className="text-sm font-semibold text-heading">Employee details</h2>
             {canEdit && (
               <Button variant="secondary" size="sm" icon={Pencil} onClick={() => setEditing(true)}>
                 Edit
@@ -210,37 +210,37 @@ function EditEmployeeForm({
 
   return (
     <Card className="p-6">
-      <h2 className="mb-4 text-sm font-semibold text-slate-900">Edit employee details</h2>
+      <h2 className="mb-4 text-sm font-semibold text-heading">Edit employee details</h2>
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="edit-first-name" className="label">
+          <label htmlFor="edit-first-name" className="c-label">
             First name
           </label>
-          <input id="edit-first-name" required value={form.firstName} onChange={(e) => set("firstName", e.target.value)} className="input" />
+          <input id="edit-first-name" required value={form.firstName} onChange={(e) => set("firstName", e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="edit-last-name" className="label">
+          <label htmlFor="edit-last-name" className="c-label">
             Last name
           </label>
-          <input id="edit-last-name" required value={form.lastName} onChange={(e) => set("lastName", e.target.value)} className="input" />
+          <input id="edit-last-name" required value={form.lastName} onChange={(e) => set("lastName", e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="edit-designation" className="label">
+          <label htmlFor="edit-designation" className="c-label">
             Designation
           </label>
-          <input id="edit-designation" value={form.designation} onChange={(e) => set("designation", e.target.value)} className="input" />
+          <input id="edit-designation" value={form.designation} onChange={(e) => set("designation", e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="edit-phone" className="label">
+          <label htmlFor="edit-phone" className="c-label">
             Phone
           </label>
-          <input id="edit-phone" type="tel" value={form.phone} onChange={(e) => set("phone", e.target.value)} className="input" />
+          <input id="edit-phone" type="tel" value={form.phone} onChange={(e) => set("phone", e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="edit-department" className="label">
+          <label htmlFor="edit-department" className="c-label">
             Department
           </label>
-          <select id="edit-department" value={form.departmentId} onChange={(e) => set("departmentId", e.target.value)} className="input">
+          <select id="edit-department" value={form.departmentId} onChange={(e) => set("departmentId", e.target.value)} className="c-select">
             <option value="">No department</option>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>
@@ -250,10 +250,10 @@ function EditEmployeeForm({
           </select>
         </div>
         <div>
-          <label htmlFor="edit-manager" className="label">
+          <label htmlFor="edit-manager" className="c-label">
             Manager
           </label>
-          <select id="edit-manager" value={form.managerId} onChange={(e) => set("managerId", e.target.value)} className="input">
+          <select id="edit-manager" value={form.managerId} onChange={(e) => set("managerId", e.target.value)} className="c-select">
             <option value="">No manager</option>
             {managerOptions.map((c) => (
               <option key={c.id} value={c.id}>
@@ -263,16 +263,16 @@ function EditEmployeeForm({
           </select>
         </div>
         <div>
-          <label htmlFor="edit-joining" className="label">
+          <label htmlFor="edit-joining" className="c-label">
             Date of joining
           </label>
-          <input id="edit-joining" type="date" value={form.dateOfJoining} onChange={(e) => set("dateOfJoining", e.target.value)} className="input" />
+          <input id="edit-joining" type="date" value={form.dateOfJoining} onChange={(e) => set("dateOfJoining", e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="edit-status" className="label">
+          <label htmlFor="edit-status" className="c-label">
             Status
           </label>
-          <select id="edit-status" value={form.status} onChange={(e) => set("status", e.target.value as EmployeeStatus)} className="input">
+          <select id="edit-status" value={form.status} onChange={(e) => set("status", e.target.value as EmployeeStatus)} className="c-select">
             {(Object.keys(STATUS_LABELS) as EmployeeStatus[]).map((s) => (
               <option key={s} value={s}>
                 {STATUS_LABELS[s]}
@@ -280,10 +280,10 @@ function EditEmployeeForm({
             ))}
           </select>
           {form.status === "EXITED" && employee.status !== "EXITED" && (
-            <p className="mt-1 text-xs text-amber-700">Their exit date will be set to today.</p>
+            <p className="mt-1 text-xs text-warning-text">Their exit date will be set to today.</p>
           )}
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="flex gap-2 sm:col-span-2">
           <Button type="submit" icon={Save} loading={saving}>
             Save changes
@@ -302,8 +302,8 @@ function PersonalDetailsCard({ employee }: { employee: Employee }) {
   const emergency = [employee.emergencyContactName, employee.emergencyContactPhone].filter(Boolean).join(" · ");
   return (
     <Card className="p-6">
-      <h2 className="text-sm font-semibold text-slate-900">Personal details</h2>
-      <p className="mt-1 text-sm text-slate-500">
+      <h2 className="text-sm font-semibold text-heading">Personal details</h2>
+      <p className="mt-1 text-sm text-secondary">
         Filled in by {employee.firstName} on their My Profile page. Hidden from managers and colleagues.
       </p>
       <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
@@ -351,8 +351,8 @@ function ResetPasswordCard({ employeeId, name }: { employeeId: string; name: str
 
   return (
     <Card className="p-6">
-      <h2 className="text-sm font-semibold text-slate-900">Account access</h2>
-      <p className="mt-1 text-sm text-slate-500">
+      <h2 className="text-sm font-semibold text-heading">Account access</h2>
+      <p className="mt-1 text-sm text-secondary">
         Forgot their password or locked out? {byEmail ? "Send them a reset link by email." : "Issue a new temporary password."}
       </p>
       {result ? (
@@ -371,8 +371,8 @@ function ResetPasswordCard({ employeeId, name }: { employeeId: string; name: str
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-0.5 break-words font-medium text-slate-900">{value}</dd>
+      <dt className="text-xs font-medium uppercase tracking-wide text-secondary">{label}</dt>
+      <dd className="mt-0.5 break-words font-medium text-heading">{value}</dd>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { CalendarClock, Clock, UserPlus } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Employee, ShiftAssignment, ShiftTemplate } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, Skeleton } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, Skeleton } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate } from "@/components/format";
 
@@ -62,7 +62,7 @@ export default function ShiftsPage() {
       <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
 
       <Card className="p-5 sm:p-6">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">My shift</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-secondary">My shift</p>
         {loading ? (
           <div className="mt-2 space-y-2">
             <Skeleton className="h-6 w-40" />
@@ -70,18 +70,18 @@ export default function ShiftsPage() {
           </div>
         ) : myShift ? (
           <div className="mt-2 flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-link">
               <Clock className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-lg font-semibold text-slate-900">{myShift.shiftTemplate.name}</p>
-              <p className="text-sm text-slate-500">
+              <p className="text-lg font-semibold text-heading">{myShift.shiftTemplate.name}</p>
+              <p className="text-sm text-secondary">
                 {myShift.shiftTemplate.startTime} – {myShift.shiftTemplate.endTime} · effective from {formatDate(myShift.effectiveFrom)}
               </p>
             </div>
           </div>
         ) : (
-          <p className="mt-2 text-sm text-slate-500">You haven&apos;t been assigned a shift yet. Contact HR if you think this is a mistake.</p>
+          <p className="mt-2 text-sm text-secondary">You haven&apos;t been assigned a shift yet. Contact HR if you think this is a mistake.</p>
         )}
       </Card>
 
@@ -103,7 +103,7 @@ export default function ShiftsPage() {
           />
 
           <section className="space-y-2">
-            <h2 className="text-sm font-medium text-slate-500">All assignments</h2>
+            <h2 className="text-sm font-medium text-secondary">All assignments</h2>
             {loading ? (
               <LoadingRows rows={4} />
             ) : assignments.length === 0 ? (
@@ -115,8 +115,8 @@ export default function ShiftsPage() {
                 />
               </Card>
             ) : (
-              <div className="table-wrap">
-                <table>
+              <div className="c-table-wrap">
+                <table className="c-table">
                   <thead>
                     <tr>
                       <th>Employee</th>
@@ -127,16 +127,16 @@ export default function ShiftsPage() {
                   <tbody>
                     {assignments.map((a) => (
                       <tr key={a.id}>
-                        <td className="font-medium text-slate-900">
+                        <td className="font-medium text-heading">
                           {a.employee?.firstName} {a.employee?.lastName}
                         </td>
-                        <td className="text-slate-500">
+                        <td className="text-secondary">
                           {a.shiftTemplate.name}{" "}
                           <span className="whitespace-nowrap">
                             ({a.shiftTemplate.startTime}–{a.shiftTemplate.endTime})
                           </span>
                         </td>
-                        <td className="whitespace-nowrap text-slate-500">{formatDate(a.effectiveFrom)}</td>
+                        <td className="whitespace-nowrap text-secondary">{formatDate(a.effectiveFrom)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -174,27 +174,27 @@ function TemplateForm({ onCreated }: { onCreated: (name: string) => void }) {
 
   return (
     <Card className="p-4">
-      <h2 className="mb-3 text-sm font-semibold text-slate-900">New shift template</h2>
+      <h2 className="mb-3 text-sm font-semibold text-heading">New shift template</h2>
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label htmlFor="shift-tpl-name" className="label">
+          <label htmlFor="shift-tpl-name" className="c-label">
             Name
           </label>
-          <input id="shift-tpl-name" required placeholder="e.g. Day Shift" value={name} onChange={(e) => setName(e.target.value)} className="input" />
+          <input id="shift-tpl-name" required placeholder="e.g. Day Shift" value={name} onChange={(e) => setName(e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="shift-tpl-start" className="label">
+          <label htmlFor="shift-tpl-start" className="c-label">
             Start time
           </label>
-          <input id="shift-tpl-start" required type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="input" />
+          <input id="shift-tpl-start" required type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="c-input" />
         </div>
         <div>
-          <label htmlFor="shift-tpl-end" className="label">
+          <label htmlFor="shift-tpl-end" className="c-label">
             End time
           </label>
-          <input id="shift-tpl-end" required type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="input" />
+          <input id="shift-tpl-end" required type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="c-input" />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting} icon={Clock}>
             Create template
@@ -239,13 +239,13 @@ function AssignForm({
 
   return (
     <Card className="p-4">
-      <h2 className="mb-3 text-sm font-semibold text-slate-900">Assign employee to shift</h2>
+      <h2 className="mb-3 text-sm font-semibold text-heading">Assign employee to shift</h2>
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="shift-assign-employee" className="label">
+          <label htmlFor="shift-assign-employee" className="c-label">
             Employee
           </label>
-          <select id="shift-assign-employee" required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="input">
+          <select id="shift-assign-employee" required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="c-select">
             <option value="">Select employee…</option>
             {employees.map((emp) => (
               <option key={emp.id} value={emp.id}>
@@ -255,10 +255,10 @@ function AssignForm({
           </select>
         </div>
         <div>
-          <label htmlFor="shift-assign-template" className="label">
+          <label htmlFor="shift-assign-template" className="c-label">
             Shift template
           </label>
-          <select id="shift-assign-template" required value={shiftTemplateId} onChange={(e) => setShiftTemplateId(e.target.value)} className="input">
+          <select id="shift-assign-template" required value={shiftTemplateId} onChange={(e) => setShiftTemplateId(e.target.value)} className="c-select">
             <option value="">Select shift…</option>
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
@@ -268,12 +268,12 @@ function AssignForm({
           </select>
         </div>
         <div>
-          <label htmlFor="shift-assign-from" className="label">
+          <label htmlFor="shift-assign-from" className="c-label">
             Effective from
           </label>
-          <input id="shift-assign-from" required type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} className="input" />
+          <input id="shift-assign-from" required type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} className="c-input" />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting} icon={UserPlus}>
             Assign

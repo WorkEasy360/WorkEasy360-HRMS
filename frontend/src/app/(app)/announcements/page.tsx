@@ -5,7 +5,7 @@ import { Megaphone } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Announcement } from "@/lib/types";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatDate } from "@/components/format";
 
@@ -82,7 +82,7 @@ export default function AnnouncementsPage() {
             action={
               canManage &&
               !showForm && (
-                <Button icon={Megaphone} onClick={() => setShowForm(true)}>
+                <Button variant="secondary" icon={Megaphone} onClick={() => setShowForm(true)}>
                   New announcement
                 </Button>
               )
@@ -94,13 +94,13 @@ export default function AnnouncementsPage() {
           {announcements.map((a) => (
             <Card key={a.id} className="p-4 sm:p-5">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <h2 className="font-semibold text-slate-900">{a.title}</h2>
-                <time dateTime={a.publishedAt} className="text-xs text-slate-400">
+                <h2 className="font-semibold text-heading">{a.title}</h2>
+                <time dateTime={a.publishedAt} className="text-xs text-secondary">
                   {formatDate(a.publishedAt)}
                 </time>
               </div>
-              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-600">{a.body}</p>
-              <p className="mt-3 text-xs text-slate-400">
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-body">{a.body}</p>
+              <p className="mt-3 text-xs text-secondary">
                 Posted by {a.author.firstName} {a.author.lastName}
               </p>
             </Card>
@@ -135,7 +135,7 @@ function AnnouncementForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label htmlFor="announcement-title" className="label">
+          <label htmlFor="announcement-title" className="c-label">
             Title
           </label>
           <input
@@ -144,11 +144,11 @@ function AnnouncementForm({ onCreated }: { onCreated: () => void }) {
             placeholder="e.g. Office closed on Friday"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div className="sm:col-span-2">
-          <label htmlFor="announcement-body" className="label">
+          <label htmlFor="announcement-body" className="c-label">
             Message
           </label>
           <textarea
@@ -158,10 +158,10 @@ function AnnouncementForm({ onCreated }: { onCreated: () => void }) {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={4}
-            className="input"
+            className="c-textarea"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         <div className="sm:col-span-2">
           <Button type="submit" loading={submitting}>
             Publish

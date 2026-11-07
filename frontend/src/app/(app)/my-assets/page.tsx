@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Laptop, Package } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Asset } from "@/lib/types";
-import { Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage } from "@/components/feedback";
 
 export default function MyAssetsPage() {
@@ -48,14 +48,14 @@ export default function MyAssetsPage() {
         <div className="space-y-2">
           {assets.map((a) => (
             <Card key={a.id} className="flex items-center gap-3 p-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-link">
                 <Laptop className="h-4 w-4" aria-hidden="true" />
               </div>
               <div className="min-w-0">
-                <p className="font-medium text-slate-900">{a.name}</p>
-                <p className="text-sm text-slate-500">
+                <p className="font-medium text-heading">{a.name}</p>
+                <p className="text-sm text-secondary">
                   {a.category}
-                  {a.serialNumber && <span className="text-slate-400"> · {a.serialNumber}</span>}
+                  {a.serialNumber && <span className="text-secondary"> · {a.serialNumber}</span>}
                 </p>
               </div>
             </Card>

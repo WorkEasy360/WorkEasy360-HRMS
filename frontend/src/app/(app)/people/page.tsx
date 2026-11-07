@@ -7,7 +7,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Employee } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { AccessNotice, type AccessResult } from "@/components/AccessNotice";
 
@@ -78,7 +78,7 @@ export default function PeoplePage() {
 
       <form onSubmit={onSearch} className="flex max-w-md items-end gap-2">
         <div className="flex-1">
-          <label htmlFor="people-search" className="label">
+          <label htmlFor="people-search" className="c-label">
             Search employees
           </label>
           <input
@@ -87,7 +87,7 @@ export default function PeoplePage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Name or employee code…"
-            className="input"
+            className="c-input"
           />
         </div>
         <Button type="submit" variant="secondary" icon={Search}>
@@ -96,7 +96,7 @@ export default function PeoplePage() {
       </form>
 
       {!loading && employees.length > 0 && (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-secondary">
           {employees.length} employee{employees.length === 1 ? "" : "s"}
           {activeSearch ? ` matching “${activeSearch}”` : ""}
           {activeCount > 0 && ` · ${activeCount} active`}
@@ -131,7 +131,7 @@ export default function PeoplePage() {
               action={
                 canManage &&
                 !showAddForm && (
-                  <Button icon={UserPlus} onClick={() => setShowAddForm(true)}>
+                  <Button variant="secondary" icon={UserPlus} onClick={() => setShowAddForm(true)}>
                     Add employee
                   </Button>
                 )
@@ -140,8 +140,8 @@ export default function PeoplePage() {
           )}
         </Card>
       ) : (
-        <div className="table-wrap">
-          <table>
+        <div className="c-table-wrap">
+          <table className="c-table">
             <thead>
               <tr>
                 <th>Employee</th>
@@ -155,13 +155,13 @@ export default function PeoplePage() {
               {employees.map((emp) => (
                 <tr key={emp.id}>
                   <td>
-                    <Link href={`/people/${emp.id}`} className="font-medium text-slate-900 hover:text-blue-600 hover:underline">
+                    <Link href={`/people/${emp.id}`} className="c-link">
                       {emp.firstName} {emp.lastName}
                     </Link>
                   </td>
-                  <td className="whitespace-nowrap text-slate-500">{emp.employeeCode}</td>
-                  <td className="text-slate-500">{emp.designation ?? "—"}</td>
-                  <td className="text-slate-500">{emp.department?.name ?? "—"}</td>
+                  <td className="whitespace-nowrap text-secondary">{emp.employeeCode}</td>
+                  <td className="text-secondary">{emp.designation ?? "—"}</td>
+                  <td className="text-secondary">{emp.department?.name ?? "—"}</td>
                   <td>
                     <StatusBadge status={emp.status} />
                   </td>
@@ -209,7 +209,7 @@ function AddEmployeeForm({ onCreated }: { onCreated: () => void }) {
     <Card className="p-4">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="emp-first-name" className="label">
+          <label htmlFor="emp-first-name" className="c-label">
             First name
           </label>
           <input
@@ -217,11 +217,11 @@ function AddEmployeeForm({ onCreated }: { onCreated: () => void }) {
             required
             value={form.firstName}
             onChange={(e) => set("firstName", e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="emp-last-name" className="label">
+          <label htmlFor="emp-last-name" className="c-label">
             Last name
           </label>
           <input
@@ -229,11 +229,11 @@ function AddEmployeeForm({ onCreated }: { onCreated: () => void }) {
             required
             value={form.lastName}
             onChange={(e) => set("lastName", e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="emp-email" className="label">
+          <label htmlFor="emp-email" className="c-label">
             Work email
           </label>
           <input
@@ -243,22 +243,22 @@ function AddEmployeeForm({ onCreated }: { onCreated: () => void }) {
             placeholder="name@company.com"
             value={form.email}
             onChange={(e) => set("email", e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
         <div>
-          <label htmlFor="emp-designation" className="label">
-            Designation <span className="font-normal text-slate-400">(optional)</span>
+          <label htmlFor="emp-designation" className="c-label">
+            Designation <span className="font-normal text-secondary">(optional)</span>
           </label>
           <input
             id="emp-designation"
             placeholder="e.g. Software Engineer"
             value={form.designation}
             onChange={(e) => set("designation", e.target.value)}
-            className="input"
+            className="c-input"
           />
         </div>
-        {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
         {access && <AccessNotice result={access} kind="created" />}
         <div className="sm:col-span-2">
           <Button type="submit" icon={UserPlus} loading={submitting}>
