@@ -16,7 +16,13 @@ interface EmailContent {
   footnote?: string;
 }
 
-/** Builds a consistent, branded HTML email plus a plain-text alternative. */
+/**
+ * Builds a consistent, branded HTML email plus a plain-text alternative.
+ *
+ * The brand mark is served from the web app at /logo.png. Its alt is empty
+ * because the "WorkEasy360" wordmark sits beside it, so a client that blocks
+ * images still shows the name exactly once.
+ */
 export function renderEmail(c: EmailContent): MailMessage {
   const url = c.action ? appUrl(c.action.path) : null;
   const detailsHtml = c.details?.length
@@ -33,8 +39,8 @@ export function renderEmail(c: EmailContent): MailMessage {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:24px 12px">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden">
-<tr><td style="background:#0b1220;padding:16px 24px;color:#ffffff;font-size:16px;font-weight:600">
-<span style="display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;background:#2563eb;border-radius:6px;margin-right:8px">W</span>WorkEasy360</td></tr>
+<tr><td style="background:#1b3040;padding:16px 24px;color:#ffffff;font-size:16px;font-weight:600">
+<img src="${escapeHtml(appUrl("/logo.png"))}" width="28" height="28" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:8px;border:0">WorkEasy360</td></tr>
 <tr><td style="padding:28px 24px;color:#334155;font-size:15px;line-height:1.6">
 <h1 style="margin:0 0 12px;font-size:20px;color:#0f172a">${escapeHtml(c.heading)}</h1>
 ${c.paragraphs.map((p) => `<p style="margin:0 0 12px">${escapeHtml(p)}</p>`).join("")}

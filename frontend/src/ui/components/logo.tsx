@@ -1,3 +1,6 @@
+import Image from "next/image";
+import logo from "../assets/logo.png";
+
 /**
  * The product name and the brand mark.
  *
@@ -7,32 +10,19 @@
 export const PRODUCT_NAME = "HRMS";
 
 /**
- * The brand mark, in the logo green. That green is for the mark only, never
- * for UI — UI green is `--we-accent`.
+ * The brand mark: the supplied artwork itself (`../assets/logo.png`, lifted off
+ * its background with a real alpha channel so it sits cleanly on white and on
+ * navy). `../assets/logo.jpg` is the original file it came from.
  *
- * This is a geometric stand-in: replace the paths with the vector traced from
- * `assets/logo.jpg` when the artwork is available, keeping the fill token.
+ * Being an image rather than a vector, it carries its own green — the logo green,
+ * the value of `--we-logo` — and cannot be recoloured by a token. That green is
+ * for the mark only, never for UI; UI green is `--we-accent`.
+ *
+ * `unoptimized` serves the file as published: it is already sized for the slots
+ * it fills, so the image optimizer would only add a round trip.
  */
 export function BrandMark({ className = "size-8", title }: { className?: string; title?: string }) {
-  return (
-    <svg
-      viewBox="0 0 32 32"
-      className={className}
-      role={title ? "img" : "presentation"}
-      aria-label={title}
-      aria-hidden={title ? undefined : true}
-    >
-      <rect width="32" height="32" rx="8" fill="var(--we-logo)" />
-      <path
-        d="M8 12.5 12.2 22h1.6L16 16.4l2.2 5.6h1.6L24 12.5"
-        fill="none"
-        stroke="var(--we-on-accent)"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <Image src={logo} alt={title ?? ""} className={className} unoptimized priority aria-hidden={title ? undefined : true} />;
 }
 
 /**
