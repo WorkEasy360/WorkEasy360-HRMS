@@ -67,6 +67,25 @@ The host logs in to GHCR with the workflow's own short-lived token during the ro
    - **Without SES** (default): HR sees a one-time temporary password to hand over.
    - **With SES:** employees get a "set your password" email.
 
+
+## Turning the AI assistant on
+
+The assistant ships switched off: `AI_PROVIDER` is unset, so the chat says it
+isn't set up and nothing calls a model. To enable it:
+
+1. In `.env`, set `AI_PROVIDER=gemini` **and** `GEMINI_API_KEY=<key>` together
+   (or `openai` with `OPENAI_API_KEY`).
+2. `docker compose -f docker-compose.prod.yml up -d api`
+3. `docker compose -f docker-compose.prod.yml ps` — confirm `api` is healthy.
+
+The API validates the provider at boot and **refuses to start** without the
+matching key, so a typo takes the whole API down rather than just the assistant.
+Check step 3 before you walk away; `docker compose logs api` says which variable
+it objected to.
+
+Usage is capped per company per day (`ASSISTANT_DAILY_LIMIT`, default 200),
+counted in the `ai_usage_days` table. See [docs/04-ai-assistant.md](../docs/04-ai-assistant.md).
+
 ## Email (SES)
 
 `SES_REGION` is left unset until SES is ready; until then the app uses the temporary-password fallback. To turn email on:
