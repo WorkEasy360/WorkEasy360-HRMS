@@ -106,11 +106,18 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
-          if [ "$SIGNED" != "1" ]; then
-            ./gradlew --no-daemon assembleDebug
-            exit 0
+          task=assembleRelease
+          [ "$SIGNED" = "1" ] || task=assembleDebug
+          # On failure, surface Gradle's own explanation as an annotation, so it
+          # shows on the run summary without opening the full log.
+          if ! ./gradlew --no-daemon "$task" > "$RUNNER_TEMP/gradle.log" 2>&1; then
+            tail -n 60 "$RUNNER_TEMP/gradle.log"
+            msg=$(grep -E -A12 "What went wrong|^e: |error:" "$RUNNER_TEMP/gradle.log" | head -n 40 | awk 'BEGIN { ORS = "%0A" } { gsub(/%/, "%25"); print }')
+            echo "::error title=Gradle build failed::${msg:-see the log}"
+            exit 1
           fi
-          ./gradlew --no-daemon assembleRelease
+          tail -n 5 "$RUNNER_TEMP/gradle.log"
+          [ "$SIGNED" = "1" ] || exit 0
           mkdir -p "$GITHUB_WORKSPACE/out"
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/out/WorkEasy360-HRMS-$APP_VERSION_NAME.apk"
           rm -f "$RUNNER_TEMP/release.p12"
