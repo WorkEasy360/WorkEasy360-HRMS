@@ -1,0 +1,21 @@
+{
+  "appId": "com.workeasy360.hrms",
+  "appName": "WorkEasy360 HRMS",
+  "webDir": "www",
+  "server": {
+    "url": "https://52-66-103-213.sslip.io/dashboard",
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "appendUserAgent": "WorkEasy360App/1.0",
+    "backgroundColor": "#F4F7F5",
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "native",
+      "style": "DARK"
+    }
+  }
+}

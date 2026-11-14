@@ -34,6 +34,7 @@ export function PageHeader({
   description,
   actions,
   icon: Icon,
+  keepTitleOnPhone = false,
 }: {
   eyebrow?: ReactNode;
   title: string;
@@ -42,10 +43,12 @@ export function PageHeader({
   actions?: ReactNode;
   /** The page's menu icon, shown in a soft green tile beside the title. */
   icon?: LucideIcon;
+  /** On phones the app bar names the screen; keep the title only when it says more (a person's name). */
+  keepTitleOnPhone?: boolean;
 }) {
   const sub = subtitle ?? description;
   return (
-    <div className="c-page-header">
+    <div className="c-page-header" data-phone-title={keepTitleOnPhone ? undefined : "hide"}>
       <div className="c-title-row">
         {Icon && (
           <div className="c-title-icon" aria-hidden>

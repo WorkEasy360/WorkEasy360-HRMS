@@ -34,6 +34,9 @@ import type {
   WorkSchedule,
 } from "@/lib/types";
 import { MyCheckIn } from "@/components/MyCheckIn";
+import { saveFile } from "@/lib/native";
+import { useIsPhone } from "@/lib/use-phone";
+import { PhoneMyAttendance } from "@/components/phone/PhoneMyAttendance";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   Avatar,
@@ -84,8 +87,10 @@ function shiftDate(iso: string, days: number) {
 function AttendanceTabs() {
   const params = useSearchParams();
   const router = useRouter();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const canReadAll = hasPermission("employee:read");
+  const isPhone = useIsPhone();
+  const [phoneReload, setPhoneReload] = useState(0);
   const requested = params.get("tab") as Tab | null;
   const tab: Tab = TABS.some((t) => t.key === requested) ? (requested as Tab) : "attendance";
   const today = localIsoDate();
@@ -103,6 +108,35 @@ function AttendanceTabs() {
     timeZone: "UTC",
   });
 
+  // The register's day. On phones it sits above the team register it controls.
+  const dateNav = (
+    <div className="c-date-nav">
+      <button type="button" onClick={() => setDate(shiftDate(date, -1))} aria-label="Previous day">
+        <ChevronLeft className="size-5" aria-hidden />
+      </button>
+      <label>
+        <CalendarDays className="size-icon text-secondary" strokeWidth={2} aria-hidden />
+        <span>{label}</span>
+        <input
+          type="date"
+          className="sr-only"
+          value={date}
+          max={today}
+          onChange={(e) => e.target.value && setDate(e.target.value)}
+          aria-label="Pick a date"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => setDate(shiftDate(date, 1))}
+        disabled={date >= today}
+        aria-label="Next day"
+      >
+        <ChevronRight className="size-5" aria-hidden />
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -111,33 +145,7 @@ function AttendanceTabs() {
         description="Track employee attendance, check in/out, and manage corrections."
         actions={
           <>
-            {canReadAll && tab === "attendance" && (
-              <div className="c-date-nav">
-                <button type="button" onClick={() => setDate(shiftDate(date, -1))} aria-label="Previous day">
-                  <ChevronLeft className="size-5" aria-hidden />
-                </button>
-                <label>
-                  <CalendarDays className="size-icon text-secondary" strokeWidth={2} aria-hidden />
-                  <span>{label}</span>
-                  <input
-                    type="date"
-                    className="sr-only"
-                    value={date}
-                    max={today}
-                    onChange={(e) => e.target.value && setDate(e.target.value)}
-                    aria-label="Pick a date"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setDate(shiftDate(date, 1))}
-                  disabled={date >= today}
-                  aria-label="Next day"
-                >
-                  <ChevronRight className="size-5" aria-hidden />
-                </button>
-              </div>
-            )}
+            {canReadAll && tab === "attendance" && !isPhone && dateNav}
             <Button icon={Plus} onClick={() => select("corrections", "&new=1")}>
               Add Correction
             </Button>
@@ -153,8 +161,27 @@ function AttendanceTabs() {
         ))}
       </div>
 
-      {tab === "attendance" && (canReadAll ? <RegisterTab date={date} /> : <MyAttendanceTab />)}
-      {tab === "leave" && <LeaveTab />}
+      {tab === "attendance" &&
+        (isPhone ? (
+          // Phone: my own day first (as in the app design), then the team register for HR.
+          <>
+            {user?.employee && <PhoneMyAttendance onChange={() => setPhoneReload((k) => k + 1)} />}
+            {canReadAll && (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                  <h2 className="text-base font-semibold text-heading">Team Register</h2>
+                  {dateNav}
+                </div>
+                <RegisterTab key={phoneReload} date={date} hideMyCheckIn />
+              </>
+            )}
+          </>
+        ) : canReadAll ? (
+          <RegisterTab date={date} />
+        ) : (
+          <MyAttendanceTab />
+        ))}
+      {tab === "leave" && <LeaveTab startOpen={params.get("new") === "1"} />}
       {tab === "corrections" && <CorrectionsTab startOpen={params.get("new") === "1"} />}
       {tab === "schedule" && <ScheduleTab />}
     </div>
@@ -181,8 +208,9 @@ function workedHours(checkIn: string | null, checkOut: string | null): string {
   return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
 }
 
-function RegisterTab({ date }: { date: string }) {
+function RegisterTab({ date, hideMyCheckIn = false }: { date: string; hideMyCheckIn?: boolean }) {
   const router = useRouter();
+  const { toast } = useFeedback();
   const [register, setRegister] = useState<AttendanceRegister | null>(null);
   const [trend, setTrend] = useState<Trend | null>(null);
   const [pendingCorrections, setPendingCorrections] = useState(0);
@@ -240,12 +268,7 @@ function RegisterTab({ date }: { date: string }) {
         .join(","),
     );
     const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `attendance-${register!.date}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveFile(blob, `attendance-${register!.date}.csv`).catch(() => toast.error("Couldn't save the file."));
   }
 
   const trendData = (trend?.days ?? []).map((d) => {
@@ -262,7 +285,7 @@ function RegisterTab({ date }: { date: string }) {
       <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       {/* HR and admins are employees too: their own check in / out. */}
-      <MyCheckIn onChange={() => setReloadKey((k) => k + 1)} />
+      {!hideMyCheckIn && <MyCheckIn onChange={() => setReloadKey((k) => k + 1)} />}
 
       {!register.isWorkingDay && (
         <p className="c-alert" data-tone="info">
@@ -610,14 +633,15 @@ function MyAttendanceTab() {
 
 /* ─── Leave ──────────────────────────────────────────────────────────── */
 
-function LeaveTab() {
+function LeaveTab({ startOpen = false }: { startOpen?: boolean }) {
   const { toast, confirm } = useFeedback();
   const [mine, setMine] = useState<LeaveRequest[]>([]);
   const [pending, setPending] = useState<LeaveRequest[]>([]);
   const [schedule, setSchedule] = useState<WorkSchedule | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  // Home's "Apply Leave" quick action opens the form straight away.
+  const [showForm, setShowForm] = useState(startOpen);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {

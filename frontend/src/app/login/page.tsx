@@ -8,6 +8,8 @@ import { AuthFeatureTiles, AuthShell, safeNextPath } from "@/components/AuthShel
 import { errorMessage } from "@/components/feedback";
 import { ApiError } from "@/lib/api";
 import { PasswordInput } from "@/components/PasswordInput";
+import { PhoneWelcome } from "@/components/phone/PhoneWelcome";
+import { useIsPhone } from "@/lib/use-phone";
 import { Button, ErrorBanner } from "@/ui";
 import { useAuth } from "@/lib/auth-context";
 import { useAppConfig } from "@/lib/use-app-config";
@@ -33,6 +35,10 @@ export default function LoginPage() {
   const [needOrganization, setNeedOrganization] = useState(false);
   const [showResetHint, setShowResetHint] = useState(false);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
+  // Phones open on the welcome screen; "Login to HRMS" shows the form. A
+  // redirect back to a page (?next=) or a prefilled email goes straight to it.
+  const isPhone = useIsPhone();
+  const [showForm, setShowForm] = useState(false);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -44,8 +50,10 @@ export default function LoginPage() {
 
   // Pre-fill the organization ID used last time on this device, and the email after a password reset.
   useEffect(() => {
-    const prefillEmail = new URLSearchParams(window.location.search).get("email");
+    const search = new URLSearchParams(window.location.search);
+    const prefillEmail = search.get("email");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring saved values on mount
+    if (prefillEmail || search.get("next")) setShowForm(true);
     if (prefillEmail) setEmail(prefillEmail);
     try {
       localStorage.removeItem(LEGACY_ORG_KEY);
@@ -153,6 +161,10 @@ export default function LoginPage() {
         </form>
       </AuthShell>
     );
+  }
+
+  if (isPhone && !showForm) {
+    return <PhoneWelcome onLogin={() => setShowForm(true)} canRegister={!!config?.registrationEnabled} />;
   }
 
   return (

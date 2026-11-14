@@ -7,6 +7,8 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import type { CompensationRecord, Employee, PayrollRun, Payslip } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { PhonePayslip } from "@/components/phone/PhonePayslip";
+import { useIsPhone } from "@/lib/use-phone";
 import { Button, Card, CardBody, CardHeader, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { formatCalendarDate, formatMoney, formatMoneyWhole, localIsoDate } from "@/components/format";
@@ -19,7 +21,7 @@ import { formatCalendarDate, formatMoney, formatMoneyWhole, localIsoDate } from 
  * is a new payslip revision that keeps the original.
  */
 
-type Tab = "salary" | "runs";
+type Tab = "payslip" | "salary" | "runs";
 
 const MONTHS = [
   "January",
@@ -45,32 +47,49 @@ export default function PayrollPage() {
 }
 
 function Payroll() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const params = useSearchParams();
   const router = useRouter();
+  const isPhone = useIsPhone();
   const canRun = hasPermission("payroll:manage");
   const canSetSalary = hasPermission("compensation:manage");
+  // Phones put the person's own payslip first, as in the app design.
+  const hasOwnPayslip = isPhone && !!user?.employee;
   const requested = params.get("tab") as Tab | null;
-  const tab: Tab = requested === "salary" && canSetSalary ? "salary" : canRun ? "runs" : "salary";
+  const tab: Tab =
+    requested === "salary" && canSetSalary
+      ? "salary"
+      : requested === "runs" && canRun
+        ? "runs"
+        : hasOwnPayslip && (requested === "payslip" || !requested)
+          ? "payslip"
+          : canRun
+            ? "runs"
+            : "salary";
 
   return (
     <div className="space-y-6">
       <PageHeader icon={CreditCard} title="Payroll" description="Salary details, the monthly payroll run and payslips." />
 
       <div className="c-tabs" role="tablist" aria-label="Payroll">
+        {hasOwnPayslip && (
+          <button role="tab" aria-selected={tab === "payslip"} onClick={() => router.replace("/payroll?tab=payslip", { scroll: false })} className="c-tab">
+            Payslip
+          </button>
+        )}
         {canSetSalary && (
           <button role="tab" aria-selected={tab === "salary"} onClick={() => router.replace("/payroll?tab=salary", { scroll: false })} className="c-tab">
-            Salary details
+            {isPhone ? "Salary" : "Salary details"}
           </button>
         )}
         {canRun && (
-          <button role="tab" aria-selected={tab === "runs"} onClick={() => router.replace("/payroll", { scroll: false })} className="c-tab">
-            Monthly payroll
+          <button role="tab" aria-selected={tab === "runs"} onClick={() => router.replace("/payroll?tab=runs", { scroll: false })} className="c-tab">
+            {isPhone ? "Payroll" : "Monthly payroll"}
           </button>
         )}
       </div>
 
-      {tab === "salary" ? <SalaryTab /> : <RunsTab />}
+      {tab === "payslip" ? <PhonePayslip /> : tab === "salary" ? <SalaryTab /> : <RunsTab />}
     </div>
   );
 }

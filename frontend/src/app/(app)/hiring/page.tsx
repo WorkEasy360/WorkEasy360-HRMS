@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { AccessNotice, type AccessResult } from "@/components/AccessNotice";
 import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
+import { saveFile } from "@/lib/native";
 import { formatCalendarDate, formatDateTime, localIsoDate } from "@/components/format";
 
 /**
@@ -365,13 +366,7 @@ function CandidatesTab() {
         { headers: { Authorization: `Bearer ${localStorage.getItem("accessToken") ?? ""}` } },
       );
       if (!res.ok) throw new Error();
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = app.candidate.resumeFileName ?? "resume";
-      a.click();
-      URL.revokeObjectURL(url);
+      await saveFile(await res.blob(), app.candidate.resumeFileName ?? "resume");
     } catch {
       toast.error("Couldn't download that resume.");
     }

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WorkEasy360 brand: deep green structure, action green accents. -->
+    <color name="colorPrimary">#0C4F37</color>
+    <color name="colorPrimaryDark">#0C4F37</color>
+    <color name="colorAccent">#15803D</color>
+    <color name="splashBackground">#0C4F37</color>
+</resources>

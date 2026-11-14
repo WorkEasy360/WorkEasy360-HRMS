@@ -3,10 +3,15 @@
 import { useEffect, useState } from "react";
 import { Download, Receipt } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import type { Payslip } from "@/lib/types";
+import type { Organization, Payslip } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
+import { saveFile } from "@/lib/native";
+import { payslipPdf } from "@/lib/payslip-pdf";
+import { useIsPhone } from "@/lib/use-phone";
+import { PhonePayslip } from "@/components/phone/PhonePayslip";
 import { Button, Card, CardBody, CardHeader, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
-import { errorMessage } from "@/components/feedback";
-import { formatCalendarDate, formatMoney } from "@/components/format";
+import { errorMessage, useFeedback } from "@/components/feedback";
+import { formatMoney } from "@/components/format";
 
 const MONTHS = [
   "January",
@@ -28,6 +33,11 @@ const MONTHS = [
  * payslip, and publishing is not payment (rule 03).
  */
 export default function PayslipsPage() {
+  const isPhone = useIsPhone();
+  return isPhone ? <PhonePayslip /> : <PayslipList />;
+}
+
+function PayslipList() {
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -113,28 +123,22 @@ export default function PayslipsPage() {
 }
 
 function PayslipDialog({ payslip, period, onClose }: { payslip: Payslip; period: string; onClose: () => void }) {
+  const { user } = useAuth();
+  const { toast } = useFeedback();
   const inputs = (payslip.calculationInputs ?? {}) as Record<string, unknown>;
 
-  function downloadText() {
-    const lines = [
-      `Payslip — ${period}`,
-      `Published: ${formatCalendarDate(payslip.publishedAt)}`,
-      payslip.revisionNumber > 1 ? `Revision ${payslip.revisionNumber}` : "",
-      "",
-      `Paid days: ${payslip.paidDays} of ${payslip.payableDays}`,
-      `Gross pay: ${formatMoney(payslip.grossPay)}`,
-      `Deductions: ${formatMoney(payslip.deductions)}`,
-      `Net pay: ${formatMoney(payslip.netPay)}`,
-      "",
-      "A published payslip is not confirmation that the salary has been paid.",
-    ].filter(Boolean);
-    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `payslip-${period.replace(/\s+/g, "-").toLowerCase()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function downloadPdf() {
+    const orgName = await apiFetch<Organization>("/organizations/current")
+      .then((o) => o.name)
+      .catch(() => null);
+    const blob = payslipPdf({
+      payslip,
+      period,
+      employeeName: user?.employee ? `${user.employee.firstName} ${user.employee.lastName}` : (user?.email ?? ""),
+      employeeCode: user?.employee?.employeeCode,
+      organizationName: orgName,
+    });
+    await saveFile(blob, `payslip-${period.replace(/ /g, "-").toLowerCase()}.pdf`).catch(() => toast.error("Couldn't save the payslip."));
   }
 
   return (
@@ -185,8 +189,8 @@ function PayslipDialog({ payslip, period, onClose }: { payslip: Payslip; period:
         </Card>
 
         <div className="mt-6 flex justify-end gap-2">
-          <Button variant="secondary" icon={Download} onClick={downloadText}>
-            Download
+          <Button variant="secondary" icon={Download} onClick={downloadPdf}>
+            Download PDF
           </Button>
           <Button onClick={onClose}>Close</Button>
         </div>

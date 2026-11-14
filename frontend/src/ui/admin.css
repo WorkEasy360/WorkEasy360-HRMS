@@ -1101,6 +1101,90 @@
   }
   .c-bottom-item[aria-current="page"] {
     color: var(--we-accent-strong, var(--we-accent));
+    font-weight: var(--we-font-weight-semibold);
+  }
+  .c-bottom-item[aria-current="page"] > svg {
+    stroke-width: 2.5;
+  }
+
+  /* Phone app bar: deep green, the screen's name, back and the bell. Colours
+     are set here rather than through data-region, so the bell's menu keeps
+     its normal text colours. */
+  .c-appbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: var(--we-space-1);
+    min-height: 3.5rem;
+    padding: env(safe-area-inset-top) var(--we-space-2) 0;
+    background: var(--we-primary);
+    color: var(--we-on-primary);
+  }
+  .c-appbar-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 1.125rem;
+    font-weight: var(--we-font-weight-semibold);
+    color: var(--we-on-primary);
+  }
+  .c-appbar-btn,
+  .c-appbar .c-topbar-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: none;
+    border-radius: var(--we-radius-full);
+    background: none;
+    color: var(--we-on-primary);
+  }
+  .c-appbar-btn:hover,
+  .c-appbar .c-topbar-icon:hover {
+    background: color-mix(in srgb, var(--we-on-primary) 12%, transparent);
+  }
+  .c-appbar-btn > svg {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+  .c-appbar-btn:focus-visible,
+  .c-appbar .c-topbar-icon:focus-visible {
+    outline: 2px solid var(--we-focus-on-primary);
+    outline-offset: 1px;
+  }
+  .c-appbar .c-topbar-dot {
+    box-shadow: 0 0 0 2px var(--we-primary);
+  }
+  .c-appbar-lockup .c-wordmark {
+    font-size: 1.125rem;
+  }
+  .c-appbar-lockup img {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .c-appbar-lockup .c-product-pill {
+    font-size: 0.75rem;
+    padding-block: 0.125rem;
+  }
+  .c-appbar-lockup > [aria-hidden] {
+    display: none;
+  }
+
+  /* On phones the app bar names the screen, so a page header keeps only its
+     actions (and disappears if it has none). */
+  @media (max-width: 59.99rem) {
+    .c-page-header[data-phone-title="hide"] .c-title-row {
+      display: none;
+    }
+    .c-page-header[data-phone-title="hide"]:not(:has(.c-toolbar)) {
+      display: none;
+    }
   }
 
   /* The "More" sheet: the remaining screens, not separate mobile workflows. */

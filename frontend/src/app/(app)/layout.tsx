@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
   Bell,
   Building2,
   CheckSquare,
@@ -23,7 +24,7 @@ import {
 import { AssistantPanel } from "@/components/AssistantPanel";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useAuth } from "@/lib/auth-context";
-import { ACCOUNT_NAV, findNavItem, mainNav, MOBILE_NAV, type NavItem } from "@/lib/navigation";
+import { ACCOUNT_NAV, findNavItem, isAdminView, mainNav, mobileNav, phoneTitle, type NavItem } from "@/lib/navigation";
 import { usePendingApprovals, type PendingCounts } from "@/lib/use-pending-approvals";
 import { apiFetch } from "@/lib/api";
 import type { Organization } from "@/lib/types";
@@ -96,6 +97,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Seven menus for HR/Admin, five for everyone else. One flat list either way:
   // no nested groups, no separate manager system.
   const items = mainNav(hasPermission);
+  const phoneItems = mobileNav(hasPermission);
+  const isHome = pathname === "/dashboard";
   const displayName = user.employee ? `${user.employee.firstName} ${user.employee.lastName}` : user.email;
   // Under the name: their job title, else their role, else their employee code.
   const subline = user.employee?.designation ?? user.roles[0] ?? user.employee?.employeeCode ?? "";
@@ -144,7 +147,35 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-topbar shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 sm:px-6">
+        {/* Phone app bar (the Android app and phone browsers): the brand on
+            Home, otherwise back + the screen's name, as in the app design. */}
+        <header className="c-appbar shell:hidden">
+          {isHome ? (
+            <>
+              <button type="button" className="c-appbar-btn" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
+                <Menu strokeWidth={2} aria-hidden />
+              </button>
+              <Link href="/dashboard" className="flex min-w-0 flex-1 items-center" aria-label="WorkEasy360 HRMS home">
+                <Lockup onDark layout="inline" className="c-appbar-lockup" />
+              </Link>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="c-appbar-btn"
+                aria-label="Back"
+                onClick={() => (window.history.length > 1 ? router.back() : router.push("/dashboard"))}
+              >
+                <ArrowLeft strokeWidth={2} aria-hidden />
+              </button>
+              <h1 className="c-appbar-title">{phoneTitle(pathname, isAdminView(hasPermission))}</h1>
+            </>
+          )}
+          <ApprovalsBell open={bellOpen} setOpen={setBellOpen} />
+        </header>
+
+        <header className="sticky top-0 z-30 hidden h-topbar shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 sm:px-6 shell:flex">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <IconButton icon={Menu} onClick={() => setDrawerOpen(true)} aria-label="Open menu" className="-ml-2 shell:hidden" />
 
@@ -244,9 +275,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Mobile bottom navigation: Home, Attendance, Leave, Help, More. */}
+      {/* Phone bottom navigation: four screens for the role, then More. */}
       <nav aria-label="Primary" className="c-bottom-nav shell:hidden">
-        {MOBILE_NAV.map((item) => (
+        {phoneItems.map((item) => (
           <BottomLink key={item.href} item={item} pathname={pathname} />
         ))}
         <button
@@ -265,17 +296,35 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-40 shell:hidden">
           <div className="c-scrim" onClick={() => setMoreOpen(false)} />
           <div role="dialog" aria-label="More" className="c-sheet">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-heading">More</p>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-3">
+                <Avatar name={displayName} />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-heading">{displayName}</span>
+                  <span className="block truncate text-xs text-secondary">{orgName ?? user.email}</span>
+                </span>
+              </span>
               <IconButton icon={X} onClick={() => setMoreOpen(false)} aria-label="Close" />
             </div>
-            <div className="c-nav mt-2">
+            <div className="c-nav mt-3">
               {/* The same screens, not separate mobile workflows. */}
-              {[...ACCOUNT_NAV, ...items.filter((i) => !MOBILE_NAV.some((m) => m.href === i.href))]
+              {[...items.filter((i) => !phoneItems.some((m) => m.href === i.href)), ...ACCOUNT_NAV]
                 .filter((item, i, all) => all.findIndex((x) => x.href === item.href) === i)
                 .map((item) => (
                   <NavLink key={item.href} item={item} active={item.href === activeItem?.href} />
                 ))}
+              <Link href="/settings?tab=account" className="c-nav-item">
+                {user.totpEnabled ? <ShieldCheck strokeWidth={2} aria-hidden /> : <ShieldOff strokeWidth={2} aria-hidden />}
+                Account &amp; security
+              </Link>
+              <div className="flex items-center justify-between px-3 py-2 text-sm text-body">
+                Theme
+                <ThemeToggle />
+              </div>
+              <button type="button" onClick={logout} className="c-nav-item text-danger-text">
+                <LogOut strokeWidth={2} aria-hidden />
+                Sign out
+              </button>
             </div>
           </div>
         </div>

@@ -99,6 +99,13 @@ To stop everything: `Ctrl+C` in both terminals, then `docker stop workeasy-postg
   - `DocumentsPanel.tsx`, `ChecklistPanel.tsx`: reused by My Details and the employee profile
   - `settings/`: one component per Settings tab (company rules, roles, shared links, audit, automation, integrations, account)
   - `globals.css` (in `app/`) imports the token and component CSS and maps Tailwind's theme onto the tokens, so `bg-surface`, `text-secondary` and `border-line` resolve to `var(--we-*)`
+- `components/phone/`: **the phone screens** (welcome, Home, my attendance, employee list, payslip) from the Android app design. Pages switch to them with `useIsPhone()` (`lib/use-phone.ts`, below the 60rem `shell` breakpoint). The phone app bar and the role-based bottom bar are in `app/(app)/layout.tsx`; their items in `lib/navigation.ts` (`mobileNav`, `phoneTitle`).
+- `lib/native.ts`: `isNativeApp()` and `saveFile()` — downloads go through the share sheet inside the Android app, where `<a download>` does nothing. Use `saveFile` for every download.
+- `lib/payslip-pdf.ts`: the payslip PDF, written without a library.
+
+### Android app (`mobile/`)
+
+A Capacitor shell that opens the live site, so web deploys update it without a new APK. Built and signed by `.github/workflows/android.yml` (run it from Actions; needs three signing secrets). See [mobile/README.md](./mobile/README.md).
 
 ## Rules the code follows (keep them)
 

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">WorkEasy360 HRMS</string>
+    <string name="title_activity_main">WorkEasy360 HRMS</string>
+    <string name="package_name">com.workeasy360.hrms</string>
+    <string name="custom_url_scheme">com.workeasy360.hrms</string>
+</resources>

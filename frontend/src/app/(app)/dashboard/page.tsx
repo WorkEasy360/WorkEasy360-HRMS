@@ -37,6 +37,8 @@ import type {
   Payslip,
 } from "@/lib/types";
 import { MyCheckIn } from "@/components/MyCheckIn";
+import { PhoneHome } from "@/components/phone/PhoneHome";
+import { useIsPhone } from "@/lib/use-phone";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   Avatar,
@@ -60,7 +62,10 @@ import { formatCalendarDate, formatDateTime, formatMoneyCompact, formatMoneyWhol
  */
 export default function HomePage() {
   const { hasPermission } = useAuth();
-  return isAdminView(hasPermission) ? <AdminHome /> : <EmployeeHome />;
+  const isPhone = useIsPhone();
+  const admin = isAdminView(hasPermission);
+  if (isPhone) return <PhoneHome admin={admin} />;
+  return admin ? <AdminHome /> : <EmployeeHome />;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -102,6 +107,7 @@ const ACTION_LABELS: Record<string, string> = {
   "employee.exit_recorded": "Exit recorded",
   "employee.access_revoked": "HRMS access revoked",
   "employee.invite_sent": "Invitation sent",
+  "user.password_reset": "Password reset by HR",
   "payroll.finalize": "Payroll finalized",
   "payroll.publish": "Payslips published",
   "payroll.payslip_adjusted": "Payslip adjusted",

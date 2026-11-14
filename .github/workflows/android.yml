@@ -1,0 +1,109 @@
+# Builds the Android app (mobile/, a Capacitor shell around the live web app)
+# and uploads the signed APK as a workflow artifact.
+#
+# Run it from Actions → "Android APK" → Run workflow. It also runs when mobile/
+# changes on main. Web changes need no new APK: the app loads the live site.
+#
+# Repository secrets (see mobile/README.md):
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS
+# Without them the build stops: an APK signed with any other key could never be
+# updated in place by a properly signed one.
+name: Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Also publish it as a GitHub Release (a public download link)"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android.yml"
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      APP_VERSION_CODE: ${{ github.run_number }}
+      APP_VERSION_NAME: 1.0.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install and sync Capacitor
+        run: |
+          npm ci
+          npx cap sync android
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
+            {
+              echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.p12"
+              echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "ANDROID_KEY_ALIAS=$KEY_ALIAS"
+            } >> "$GITHUB_ENV"
+            echo "Signing with the release key."
+          else
+            # Refuse rather than ship an APK signed with a throwaway key: phones
+            # that install it could never take an update signed with the real one.
+            echo "::error::Add the ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS repository secrets first (see mobile/README.md)."
+            exit 1
+          fi
+
+      - name: Build
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/out/WorkEasy360-HRMS-$APP_VERSION_NAME.apk"
+          rm -f "$RUNNER_TEMP/release.p12"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WorkEasy360-HRMS-${{ env.APP_VERSION_NAME }}
+          path: out/*.apk
+          if-no-files-found: error
+
+      - name: Publish release
+        if: ${{ inputs.release }}
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "android-v$APP_VERSION_NAME" out/*.apk \
+            --title "WorkEasy360 HRMS for Android $APP_VERSION_NAME" \
+            --notes "Install on Android: download the APK on the phone, open it, and allow installs from this source when asked."

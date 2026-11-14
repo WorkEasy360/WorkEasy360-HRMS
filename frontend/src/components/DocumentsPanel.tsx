@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import type { EmployeeDocument } from "@/lib/types";
 import { Button, Card, CardBody, CardHeader, EmptyState, ErrorBanner, LoadingRows } from "@/ui";
+import { saveFile } from "@/lib/native";
 import { errorMessage, useFeedback } from "./feedback";
 import { formatCalendarDate } from "./format";
 
@@ -53,13 +54,7 @@ export function DocumentsPanel({ employeeId, title = "Documents" }: { employeeId
         headers: { Authorization: `Bearer ${localStorage.getItem("accessToken") ?? ""}` },
       });
       if (!res.ok) throw new Error("Download failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = doc.fileName;
-      a.click();
-      URL.revokeObjectURL(url);
+      await saveFile(await res.blob(), doc.fileName);
     } catch {
       toast.error("Couldn't download that file.");
     } finally {

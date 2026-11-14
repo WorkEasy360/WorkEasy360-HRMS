@@ -119,15 +119,37 @@ export const ACCOUNT_NAV: NavItem[] = [
 ];
 
 /**
- * Mobile bottom bar. Attendance and leave are tabs of one page, so they are one
+ * Phone bottom bar (the Android app and phone browsers): four screens plus
+ * "More". HR/Admin get the organization screens; employees get their own day.
+ * Attendance and leave are tabs of one page, so for employees they are one
  * screen reached two ways rather than two separate workflows.
  */
-export const MOBILE_NAV: NavItem[] = [
+const ADMIN_MOBILE_NAV: NavItem[] = [
+  { href: "/dashboard", label: "Home", icon: Home, description: "Your day at a glance" },
+  { href: "/employees", label: "Employees", icon: Users, description: "Directory and profiles" },
+  { href: "/attendance", label: "Attendance", icon: CalendarDays, description: "Attendance and leave" },
+  { href: "/payroll", label: "Payroll", icon: CreditCard, description: "Payroll and payslips" },
+];
+
+const EMPLOYEE_MOBILE_NAV: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: Home, description: "Your day at a glance" },
   { href: "/attendance", label: "Attendance", icon: Clock, description: "Check in and out" },
   { href: "/attendance?tab=leave", label: "Leave", icon: CalendarDays, description: "Request time off" },
-  { href: "/helpdesk", label: "Help", icon: LifeBuoy, description: "Raise a ticket" },
+  { href: "/payslips", label: "Payslips", icon: Receipt, description: "Your payslips" },
 ];
+
+export function mobileNav(hasPermission: (p: string) => boolean): NavItem[] {
+  return isAdminView(hasPermission) ? ADMIN_MOBILE_NAV : EMPLOYEE_MOBILE_NAV;
+}
+
+/** The title in the phone app bar, named as the screens are in the app design. */
+export function phoneTitle(pathname: string, admin: boolean): string {
+  if (pathname.startsWith("/attendance")) return "Attendance & Leave";
+  if (pathname.startsWith("/payroll")) return "Payroll & Payslip";
+  if (pathname.startsWith("/payslips")) return admin ? "My Payslips" : "Payslips";
+  if (/^\/employees\/[^/]+/.test(pathname)) return "Employee Profile";
+  return findNavItem(pathname)?.label ?? "WorkEasy360";
+}
 
 export function mainNav(hasPermission: (p: string) => boolean): NavItem[] {
   return isAdminView(hasPermission) ? ADMIN_NAV : EMPLOYEE_NAV;

@@ -98,7 +98,7 @@ export default function EmployeeProfilePage(props: PageProps<"/employees/[id]">)
           {initials}
         </div>
         <div className="min-w-0 flex-1">
-          <PageHeader title={fullName} description={subtitle || `Employee ${employee.employeeCode}`} />
+          <PageHeader keepTitleOnPhone title={fullName} description={subtitle || `Employee ${employee.employeeCode}`} />
           <div className="mt-2">
             <StatusBadge status={employee.status} />
           </div>

@@ -11,6 +11,8 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Avatar, Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
 import { AccessNotice, type AccessResult } from "@/components/AccessNotice";
+import { PhoneEmployeeList } from "@/components/phone/PhoneEmployeeList";
+import { useIsPhone } from "@/lib/use-phone";
 
 /**
  * Employees (02). The directory, with search and the active/inactive filter
@@ -19,10 +21,33 @@ import { AccessNotice, type AccessResult } from "@/components/AccessNotice";
 type StatusFilter = "all" | "active" | "inactive";
 
 export default function EmployeesPage() {
+  const isPhone = useIsPhone();
+  return <Suspense fallback={<LoadingRows rows={6} />}>{isPhone ? <PhoneEmployees /> : <EmployeeDirectory />}</Suspense>;
+}
+
+/** Phones: the app design's directory, with the same add-employee form. */
+function PhoneEmployees() {
+  const { hasPermission } = useAuth();
+  const params = useSearchParams();
+  const [showAddForm, setShowAddForm] = useState(params.get("new") === "1");
+  const [reloadKey, setReloadKey] = useState(0);
+  const canManage = hasPermission("employee:write");
+
   return (
-    <Suspense fallback={<LoadingRows rows={6} />}>
-      <EmployeeDirectory />
-    </Suspense>
+    <div className="space-y-4">
+      {canManage && (
+        <Button
+          className="h-11 w-full"
+          variant={showAddForm ? "secondary" : "primary"}
+          icon={showAddForm ? undefined : UserPlus}
+          onClick={() => setShowAddForm((v) => !v)}
+        >
+          {showAddForm ? "Close form" : "Add Employee"}
+        </Button>
+      )}
+      {showAddForm && <AddEmployeeForm onCreated={() => setReloadKey((k) => k + 1)} />}
+      <PhoneEmployeeList reloadKey={reloadKey} />
+    </div>
   );
 }
 
