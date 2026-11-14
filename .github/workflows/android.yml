@@ -110,9 +110,9 @@ jobs:
           [ "$SIGNED" = "1" ] || task=assembleDebug
           # On failure, surface Gradle's own explanation as an annotation, so it
           # shows on the run summary without opening the full log.
-          if ! ./gradlew --no-daemon "$task" > "$RUNNER_TEMP/gradle.log" 2>&1; then
+          if ! ./gradlew --no-daemon --stacktrace "$task" > "$RUNNER_TEMP/gradle.log" 2>&1; then
             tail -n 60 "$RUNNER_TEMP/gradle.log"
-            msg=$(grep -E -A12 "What went wrong|^e: |error:" "$RUNNER_TEMP/gradle.log" | head -n 40 | awk 'BEGIN { ORS = "%0A" } { gsub(/%/, "%25"); print }')
+            msg=$(grep -E -A12 "What went wrong|^e: |error:|Caused by:" "$RUNNER_TEMP/gradle.log" | head -n 40 | awk 'BEGIN { ORS = "%0A" } { gsub(/%/, "%25"); print }')
             echo "::error title=Gradle build failed::${msg:-see the log}"
             exit 1
           fi
