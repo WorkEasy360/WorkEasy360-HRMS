@@ -352,11 +352,11 @@
     display: flex;
     align-items: center;
     gap: var(--we-space-3);
-    height: var(--we-size-nav-item);
-    padding-inline: var(--we-space-3);
+    min-height: var(--we-size-nav-item);
+    padding: var(--we-space-2) var(--we-space-3);
     border-radius: var(--we-radius-md);
-    color: var(--we-text-secondary);
-    font-size: var(--we-font-size-base);
+    color: var(--we-text-body);
+    font-size: 0.9375rem;
     font-weight: var(--we-font-weight-medium);
     transition:
       background-color var(--we-motion-fast) var(--we-motion-ease),
@@ -371,56 +371,58 @@
     background-color: var(--we-surface-muted);
     color: var(--we-text-primary);
   }
+  /* The active item is a solid green pill, white text on it (5.0:1). */
   .c-nav-item[aria-current="page"] {
-    background-color: var(--we-surface-muted);
-    color: var(--we-text-primary);
+    background-color: var(--we-nav-active);
+    color: var(--we-on-nav-active);
+    box-shadow: var(--we-shadow-md);
   }
   .c-nav-item[aria-current="page"] > svg {
-    color: var(--we-accent);
-  }
-  /* The green bar on the active item. */
-  .c-nav-item[aria-current="page"]::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 20%;
-    bottom: 20%;
-    width: 3px;
-    border-radius: var(--we-radius-full);
-    background-color: var(--we-accent);
+    color: var(--we-on-nav-active);
   }
 
+  /* A segmented control in a white tray. The selected tab takes the soft
+     green fill and a green underline, so selection is never colour alone. */
   .c-tabs {
-    display: flex;
+    display: inline-flex;
+    max-width: 100%;
     gap: var(--we-space-1);
-    border-bottom: 1px solid var(--we-border);
+    padding: var(--we-space-1);
+    background-color: var(--we-surface);
+    border: 1px solid var(--we-border);
+    border-radius: var(--we-radius-lg);
+    box-shadow: var(--we-shadow-sm);
     overflow-x: auto;
+    align-self: flex-start;
   }
   .c-tab {
     display: inline-flex;
     align-items: center;
     gap: var(--we-space-2);
     height: var(--we-size-control);
-    padding-inline: var(--we-space-3);
+    padding-inline: var(--we-space-5);
     border: none;
-    border-bottom: 2px solid transparent;
+    border-radius: var(--we-radius-md);
     background: none;
-    color: var(--we-text-secondary);
+    color: var(--we-text-body);
     font-size: var(--we-font-size-base);
     font-weight: var(--we-font-weight-medium);
     white-space: nowrap;
     cursor: pointer;
     transition:
       color var(--we-motion-fast) var(--we-motion-ease),
-      border-color var(--we-motion-fast) var(--we-motion-ease);
+      background-color var(--we-motion-fast) var(--we-motion-ease);
   }
   .c-tab:hover {
     color: var(--we-text-primary);
+    background-color: var(--we-surface-muted);
   }
   .c-tab[aria-selected="true"],
   .c-tab[data-active="true"] {
-    color: var(--we-text-primary);
-    border-bottom-color: var(--we-accent);
+    color: var(--we-accent-strong);
+    font-weight: var(--we-font-weight-semibold);
+    background-color: var(--we-accent-soft);
+    box-shadow: inset 0 -2px 0 var(--we-accent);
   }
 
   .c-back {
@@ -455,14 +457,13 @@
   }
   .c-card-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: var(--we-space-3);
-    padding: var(--we-space-4) var(--we-space-5);
-    border-bottom: 1px solid var(--we-border);
+    padding: var(--we-space-5) var(--we-space-5) var(--we-space-2);
   }
   .c-card-title {
-    font-size: var(--we-font-size-md);
+    font-size: var(--we-font-size-lg);
     font-weight: var(--we-font-weight-semibold);
     color: var(--we-text-primary);
   }
@@ -485,24 +486,68 @@
   }
   .c-stat {
     display: flex;
-    flex-direction: column;
-    gap: var(--we-space-1);
+    align-items: flex-start;
+    gap: var(--we-space-4);
     padding: var(--we-space-5);
     background-color: var(--we-surface);
     border: 1px solid var(--we-border);
     border-radius: var(--we-radius-lg);
     box-shadow: var(--we-shadow-sm);
   }
+  .c-stats[data-dense="true"] {
+    gap: var(--we-space-3);
+    grid-template-columns: repeat(auto-fit, minmax(10.25rem, 1fr));
+  }
+  /* Six tiles only sit in one row on a wide screen. Below that they form an
+     even 3 × 2 grid instead of five-and-one, and each tile keeps room for a
+     money value. */
+  .c-stats[data-dense="true"]:has(> :nth-child(6)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @media (min-width: 64rem) {
+    .c-stats[data-dense="true"]:has(> :nth-child(6)) {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 105rem) {
+    .c-stats[data-dense="true"]:has(> :nth-child(6)) {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+  .c-stats[data-dense="true"] .c-stat {
+    gap: var(--we-space-3);
+    padding: var(--we-space-4);
+  }
+  .c-stats[data-dense="true"] .c-icon-tile {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+  .c-stats[data-dense="true"] .c-icon-tile > svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  .c-stats[data-dense="true"] .c-stat-value {
+    font-size: 1.5rem;
+  }
   .c-stat-label {
     font-size: var(--we-font-size-sm);
     color: var(--we-text-secondary);
   }
+  .c-stat-body {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--we-space-1);
+  }
   .c-stat-value {
-    font-size: var(--we-font-size-xl);
+    font-size: 1.75rem;
     font-weight: var(--we-font-weight-semibold);
     color: var(--we-text-primary);
     font-variant-numeric: tabular-nums;
     line-height: 1.2;
+    /* A value never spills out of its card: it wraps before it overflows. */
+    overflow-wrap: anywhere;
   }
   .c-stat-hint {
     font-size: var(--we-font-size-xs);
@@ -523,20 +568,18 @@
     font-variant-numeric: tabular-nums;
   }
   .c-table thead {
-    background-color: var(--we-background);
+    background-color: var(--we-surface-muted);
   }
   .c-table th {
     padding: var(--we-space-3) var(--we-space-4);
     text-align: left;
     white-space: nowrap;
-    font-size: var(--we-font-size-xs);
-    font-weight: var(--we-font-weight-medium);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--we-text-secondary);
+    font-size: var(--we-font-size-sm);
+    font-weight: var(--we-font-weight-semibold);
+    color: var(--we-text-primary);
   }
   .c-table td {
-    padding: var(--we-space-3) var(--we-space-4);
+    padding: 0.875rem var(--we-space-4);
     color: var(--we-text-body);
   }
   .c-table tbody tr {
@@ -708,8 +751,29 @@
     text-transform: uppercase;
     color: var(--we-text-secondary);
   }
+  .c-title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--we-space-4);
+    min-width: 0;
+  }
+  .c-title-icon {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--we-radius-lg);
+    background-color: var(--we-accent-soft);
+    color: var(--we-accent-strong);
+  }
+  .c-title-icon > svg {
+    width: 1.625rem;
+    height: 1.625rem;
+  }
   .c-title {
-    font-size: var(--we-font-size-xl);
+    font-size: 1.75rem;
     font-weight: var(--we-font-weight-semibold);
     letter-spacing: -0.01em;
     color: var(--we-text-primary);
@@ -733,15 +797,16 @@
     align-items: center;
     gap: var(--we-space-2);
     border-radius: var(--we-radius-full);
-    padding: 2px var(--we-space-2);
+    padding: 3px 10px;
     background-color: var(--we-surface-muted);
     color: var(--we-text-body);
-    font-size: var(--we-font-size-xs);
+    font-size: var(--we-font-size-sm);
     font-weight: var(--we-font-weight-medium);
     white-space: nowrap;
   }
-  /* Status never rests on colour alone: every badge carries a label and a dot. */
-  .c-badge::before {
+  /* Status never rests on colour alone: the badge always says its status in
+     words. The dot is opt-in, for badges whose label is a count or a name. */
+  .c-badge[data-dot="true"]::before {
     content: "";
     width: 6px;
     height: 6px;
@@ -773,9 +838,7 @@
     background-color: var(--we-ai-soft);
     color: var(--we-ai-text);
   }
-  .c-badge[data-dot="false"]::before {
-    display: none;
-  }
+
 
   .c-alert {
     display: flex;
@@ -1003,6 +1066,438 @@
     animation: c-slide-in var(--we-motion-drawer) var(--we-motion-ease);
   }
 
+  /* Mobile bottom navigation: Home, Attendance, Leave, Help, More.
+     The same five screens as the drawer, reached with one thumb. */
+  .c-bottom-nav {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    padding-bottom: env(safe-area-inset-bottom);
+    background-color: var(--we-surface);
+    border-top: 1px solid var(--we-border);
+  }
+  .c-bottom-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--we-space-1);
+    min-height: 3.5rem;
+    padding: var(--we-space-2) var(--we-space-1);
+    border: none;
+    background: none;
+    color: var(--we-text-secondary);
+    font-size: var(--we-font-size-xs);
+    font-weight: var(--we-font-weight-medium);
+    cursor: pointer;
+  }
+  .c-bottom-item > svg {
+    width: var(--we-size-icon);
+    height: var(--we-size-icon);
+  }
+  .c-bottom-item[aria-current="page"] {
+    color: var(--we-accent-strong, var(--we-accent));
+  }
+
+  /* The "More" sheet: the remaining screens, not separate mobile workflows. */
+  .c-sheet {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    max-height: 75vh;
+    overflow-y: auto;
+    padding: var(--we-space-4);
+    padding-bottom: calc(var(--we-space-4) + env(safe-area-inset-bottom));
+    background-color: var(--we-surface);
+    border-top-left-radius: var(--we-radius-xl);
+    border-top-right-radius: var(--we-radius-xl);
+    box-shadow: var(--we-shadow-lg);
+    animation: c-fade-in var(--we-motion-drawer) var(--we-motion-ease);
+  }
+
+  .c-checkbox {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    accent-color: var(--we-accent);
+    cursor: pointer;
+  }
+  .c-checkbox:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  /* The green sidebar: a vertical gradient with a soft light from the top. */
+  .c-sidebar {
+    background:
+      radial-gradient(120% 60% at 0% 0%, color-mix(in srgb, var(--we-on-primary) 7%, transparent), transparent 60%),
+      linear-gradient(180deg, var(--we-sidebar-top), var(--we-sidebar-bottom));
+  }
+
+  /* The wordmark and the product pill (see ui/components/logo.tsx). */
+  .c-wordmark {
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--we-text-primary);
+    line-height: 1;
+  }
+  .c-wordmark-lg {
+    font-size: 2rem;
+  }
+  .c-wordmark[data-on-dark] {
+    color: var(--we-on-primary);
+  }
+  .c-wordmark-360 {
+    color: var(--we-accent);
+  }
+  .c-wordmark[data-on-dark] .c-wordmark-360 {
+    color: var(--we-focus-on-primary);
+  }
+  .c-product-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px var(--we-space-3);
+    border-radius: var(--we-radius-md);
+    background-color: var(--we-nav-active);
+    color: var(--we-on-nav-active);
+    font-size: var(--we-font-size-base);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .c-product-pill[data-size="lg"] {
+    padding: var(--we-space-1) var(--we-space-4);
+    font-size: 1.375rem;
+  }
+
+  /* Top bar: the organization chip and the signed-in person. */
+  .c-org-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--we-space-3);
+    max-width: 22rem;
+    height: var(--we-size-control);
+    padding-inline: var(--we-space-4);
+    background-color: var(--we-surface);
+    border: 1px solid var(--we-border);
+    border-radius: var(--we-radius-md);
+    color: var(--we-text-primary);
+    font-size: 0.9375rem;
+    font-weight: var(--we-font-weight-semibold);
+  }
+  .c-org-chip > svg {
+    width: var(--we-size-icon);
+    height: var(--we-size-icon);
+    flex-shrink: 0;
+    color: var(--we-text-secondary);
+  }
+  .c-topbar-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--we-size-control);
+    height: var(--we-size-control);
+    border-radius: var(--we-radius-full);
+    color: var(--we-text-primary);
+  }
+  .c-topbar-icon:hover {
+    background-color: var(--we-surface-muted);
+  }
+  .c-topbar-icon > svg {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+  .c-topbar-dot {
+    position: absolute;
+    top: 6px;
+    right: 7px;
+    width: 9px;
+    height: 9px;
+    border-radius: var(--we-radius-full);
+    background-color: var(--we-error);
+    box-shadow: 0 0 0 2px var(--we-surface);
+  }
+
+  /* Avatars: initials on a tinted disc. The tone is picked from the name so a
+     person keeps the same colour everywhere; it is decoration, not data. */
+  .c-avatar {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--we-radius-full);
+    font-size: var(--we-font-size-base);
+    font-weight: var(--we-font-weight-semibold);
+    background-color: var(--we-accent-soft);
+    color: var(--we-accent-strong);
+  }
+  .c-avatar[data-size="sm"] {
+    width: 2rem;
+    height: 2rem;
+    font-size: var(--we-font-size-xs);
+  }
+  .c-avatar[data-size="lg"] {
+    width: 4.5rem;
+    height: 4.5rem;
+    font-size: 1.5rem;
+  }
+  .c-avatar[data-tone="info"] {
+    background-color: var(--we-info-soft);
+    color: var(--we-info-text);
+  }
+  .c-avatar[data-tone="ai"] {
+    background-color: var(--we-ai-soft);
+    color: var(--we-ai-text);
+  }
+  .c-avatar[data-tone="warning"] {
+    background-color: var(--we-warning-soft);
+    color: var(--we-warning-text);
+  }
+  .c-avatar[data-tone="danger"] {
+    background-color: var(--we-error-soft);
+    color: var(--we-error-text);
+  }
+
+  /* An icon tile: the coloured square beside a stat or a list row. */
+  .c-icon-tile {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--we-radius-lg);
+    background-color: var(--we-accent-soft);
+    color: var(--we-accent-strong);
+  }
+  .c-icon-tile > svg {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  .c-icon-tile[data-size="sm"] {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--we-radius-md);
+  }
+  .c-icon-tile[data-size="sm"] > svg {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+  .c-icon-tile[data-tone="info"] {
+    background-color: var(--we-info-soft);
+    color: var(--we-info-text);
+  }
+  .c-icon-tile[data-tone="warning"] {
+    background-color: var(--we-warning-soft);
+    color: var(--we-warning-text);
+  }
+  .c-icon-tile[data-tone="danger"] {
+    background-color: var(--we-error-soft);
+    color: var(--we-error-text);
+  }
+  .c-icon-tile[data-tone="ai"] {
+    background-color: var(--we-ai-soft);
+    color: var(--we-ai-text);
+  }
+
+  /* Quick-action tiles: a big tap target with an icon above a short label. */
+  .c-action-tiles {
+    display: grid;
+    gap: var(--we-space-3);
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  }
+  .c-action-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--we-space-2);
+    min-height: 7.5rem;
+    padding: var(--we-space-4) var(--we-space-3);
+    border: 1px solid transparent;
+    border-radius: var(--we-radius-lg);
+    background-color: var(--we-accent-soft);
+    color: var(--we-text-primary);
+    font-size: 0.9375rem;
+    font-weight: var(--we-font-weight-semibold);
+    text-align: center;
+    line-height: 1.25;
+    cursor: pointer;
+    transition:
+      border-color var(--we-motion-fast) var(--we-motion-ease),
+      transform var(--we-motion-fast) var(--we-motion-ease);
+  }
+  .c-action-tile:hover {
+    border-color: var(--we-accent);
+  }
+  .c-action-tile > svg {
+    width: 2rem;
+    height: 2rem;
+    color: var(--we-accent-strong);
+  }
+  .c-action-tile[data-tone="ai"] {
+    background-color: var(--we-ai-soft);
+  }
+  .c-action-tile[data-tone="ai"] > svg {
+    color: var(--we-ai-text);
+  }
+  .c-action-tile[data-tone="info"] {
+    background-color: var(--we-info-soft);
+  }
+  .c-action-tile[data-tone="info"] > svg {
+    color: var(--we-info-text);
+  }
+  .c-action-tile[data-tone="ai"]:hover {
+    border-color: var(--we-ai);
+  }
+  .c-action-tile[data-tone="info"]:hover {
+    border-color: var(--we-info);
+  }
+
+  /* A row in a list card: icon tile, text, then a count or a chevron. */
+  .c-list-row {
+    display: flex;
+    align-items: center;
+    gap: var(--we-space-3);
+    padding: var(--we-space-3) 0;
+    border-top: 1px solid var(--we-border);
+    color: var(--we-text-primary);
+    font-size: 0.9375rem;
+    font-weight: var(--we-font-weight-medium);
+  }
+  .c-list-row:first-child {
+    border-top: none;
+  }
+  a.c-list-row:hover,
+  button.c-list-row:hover {
+    color: var(--we-accent-strong);
+  }
+
+  /* The week strip on the employee Home: one tile per working day. */
+  .c-week {
+    display: grid;
+    gap: var(--we-space-2);
+    grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+  }
+  .c-week-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--we-space-1);
+    padding: var(--we-space-3) var(--we-space-2);
+    border: 1px solid transparent;
+    border-radius: var(--we-radius-lg);
+    background-color: var(--we-surface-muted);
+    color: var(--we-text-primary);
+    font-size: 0.9375rem;
+    font-weight: var(--we-font-weight-semibold);
+  }
+  .c-week-day > small {
+    font-size: var(--we-font-size-sm);
+    font-weight: var(--we-font-weight-normal);
+    color: var(--we-text-secondary);
+  }
+  .c-week-day[data-today="true"] {
+    border-color: var(--we-accent);
+    background-color: var(--we-accent-soft);
+  }
+
+  /* A date stepper: previous, the date, next. */
+  .c-date-nav {
+    display: inline-flex;
+    align-items: stretch;
+    height: var(--we-size-control);
+    background-color: var(--we-surface);
+    border: 1px solid var(--we-border);
+    border-radius: var(--we-radius-md);
+    box-shadow: var(--we-shadow-sm);
+  }
+  .c-date-nav > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--we-size-control);
+    color: var(--we-text-primary);
+  }
+  .c-date-nav > button:hover:not(:disabled) {
+    background-color: var(--we-surface-muted);
+  }
+  .c-date-nav > button:disabled {
+    opacity: 0.4;
+  }
+  .c-date-nav > span,
+  .c-date-nav > label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--we-space-2);
+    padding-inline: var(--we-space-4);
+    border-inline: 1px solid var(--we-border);
+    color: var(--we-text-primary);
+    font-size: 0.9375rem;
+    font-weight: var(--we-font-weight-semibold);
+    white-space: nowrap;
+  }
+
+  /* Charts. Marks wear the chart tokens; text wears text tokens. */
+  .c-chart {
+    width: 100%;
+    overflow: visible;
+  }
+  .c-chart text {
+    fill: var(--we-text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .c-chart .c-chart-value {
+    fill: var(--we-text-primary);
+    font-weight: var(--we-font-weight-semibold);
+  }
+  .c-chart .c-chart-grid {
+    stroke: var(--we-chart-grid);
+    stroke-width: 1;
+  }
+  .c-legend {
+    display: flex;
+    flex-direction: column;
+    gap: var(--we-space-2);
+    font-size: var(--we-font-size-base);
+    color: var(--we-text-body);
+  }
+  .c-legend > li {
+    display: flex;
+    align-items: center;
+    gap: var(--we-space-2);
+  }
+  .c-legend-swatch {
+    width: 10px;
+    height: 10px;
+    flex-shrink: 0;
+    border-radius: var(--we-radius-full);
+  }
+
+  /* A field that reads rather than edits: label above, value below. */
+  .c-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--we-space-1);
+  }
+  .c-field > dt {
+    font-size: var(--we-font-size-xs);
+    font-weight: var(--we-font-weight-medium);
+    color: var(--we-text-secondary);
+  }
+  .c-field > dd {
+    font-size: var(--we-font-size-base);
+    color: var(--we-text-primary);
+  }
+
   .c-chart-tip {
     padding: var(--we-space-2) var(--we-space-3);
     background-color: var(--we-surface);
@@ -1057,6 +1552,14 @@
   }
   body[data-save-bar="true"] .c-fab {
     bottom: calc(var(--we-space-6) + var(--we-size-control) + var(--we-space-4));
+  }
+  /* Below the shell breakpoint the mobile bottom bar is showing, so the
+     launcher rides above it and never covers a navigation item. */
+  @media (max-width: 59.99rem) {
+    .c-fab {
+      right: var(--we-space-4);
+      bottom: calc(3.5rem + env(safe-area-inset-bottom) + var(--we-space-4));
+    }
   }
   /* The chat window sits above the launcher, never over it. The offset is the
      launcher's own height, so changing --we-size-fab moves both together. */

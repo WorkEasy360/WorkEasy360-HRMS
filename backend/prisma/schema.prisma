@@ -24,126 +24,114 @@ enum LeaveRequestStatus {
   CANCELLED
 }
 
-enum TimesheetStatus {
+/// Attendance correction requests follow the same lifecycle as leave requests.
+enum CorrectionRequestStatus {
   PENDING
   APPROVED
   REJECTED
+  CANCELLED
 }
 
+/// DRAFT = still editable. FINALIZED = confirmed; corrections must go through a
+/// payslip revision that keeps the original row (Payroll rules 02 and 08).
 enum PayrollRunStatus {
   DRAFT
-  PROCESSED
+  FINALIZED
 }
 
-enum ReviewCycleStatus {
-  DRAFT
-  ACTIVE
-  CLOSED
+enum TicketType {
+  HR_QUESTION
+  PRODUCT_PROBLEM
 }
 
-enum ReviewStatus {
-  PENDING
-  SELF_SUBMITTED
-  MANAGER_SUBMITTED
-  COMPLETED
-}
-
-enum GoalStatus {
-  NOT_STARTED
-  IN_PROGRESS
-  COMPLETED
+enum TicketQueue {
+  HR
+  PAYROLL
+  PRODUCT
 }
 
 enum TicketStatus {
   OPEN
   IN_PROGRESS
+  WAITING
   RESOLVED
   CLOSED
 }
 
-enum AutomationTrigger {
-  LEAVE_APPROVED
-  EMPLOYEE_ONBOARDED
-  TIMESHEET_APPROVED
-}
-
-enum AutomationActionType {
-  CREATE_ANNOUNCEMENT
-  ASSIGN_ONBOARDING_TASK
-}
-
 enum JobPostingStatus {
   OPEN
+  ON_HOLD
   CLOSED
 }
 
+/// Stages belong to an application, not to the person (Hiring rule 02).
 enum CandidateStage {
   APPLIED
-  SCREENING
+  SHORTLISTED
   INTERVIEW
-  OFFER
-  HIRED
+  SELECTED
   REJECTED
+  JOINED
 }
 
-enum ExpenseStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  REIMBURSED
+enum IntegrationDirection {
+  INBOUND
+  OUTBOUND
 }
 
-enum AssetStatus {
-  AVAILABLE
-  ASSIGNED
-  RETIRED
-}
-
-enum LoanStatus {
-  PENDING
-  APPROVED
-  REJECTED
+/// Connections are owned by WorkEasy Connect; HRMS only records which ones are
+/// authorized for this organization and whether they are live.
+enum IntegrationConnectionStatus {
+  DRAFT
   ACTIVE
-  CLOSED
+  DISABLED
+  COMING_SOON
 }
 
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
+  id            String @id @default(uuid())
+  name          String
+  slug          String @unique
+  // Work schedule (Settings 7.1.2). One default schedule; no shift roster.
+  timezone      String @default("Asia/Kolkata")
+  /// ISO weekday numbers that are working days: 1 = Monday .. 7 = Sunday.
+  workingDays   Int[]  @default([1, 2, 3, 4, 5])
+  workStartTime String @default("09:00")
+  workEndTime   String @default("18:00")
+  fullDayHours  Float  @default(8)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users               User[]
-  departments         Department[]
-  employees           Employee[]
-  roles               Role[]
-  attendanceRecords   AttendanceRecord[]
-  leaveTypes          LeaveType[]
-  leaveBalances       LeaveBalance[]
-  leaveRequests       LeaveRequest[]
-  announcements       Announcement[]
-  onboardingTasks     OnboardingTask[]
-  shiftTemplates      ShiftTemplate[]
-  shiftAssignments    ShiftAssignment[]
-  timesheetEntries    TimesheetEntry[]
-  compensationRecords CompensationRecord[]
-  payrollRuns         PayrollRun[]
-  payslips            Payslip[]
-  reviewCycles        ReviewCycle[]
-  performanceReviews  PerformanceReview[]
-  goals               Goal[]
-  helpDeskTickets     HelpDeskTicket[]
-  automationRules     AutomationRule[]
-  auditLogs           AuditLog[]
-  hrGuideArticles     HrGuideArticle[]
-  jobPostings         JobPosting[]
-  candidates          Candidate[]
-  interviews          Interview[]
-  expenseClaims       ExpenseClaim[]
-  assets              Asset[]
-  loanRequests        LoanRequest[]
-  aiUsageDays         AiUsageDay[]
+  users                  User[]
+  departments            Department[]
+  employees              Employee[]
+  employeeDocuments      EmployeeDocument[]
+  roles                  Role[]
+  attendanceRecords      AttendanceRecord[]
+  attendanceCorrections  AttendanceCorrectionRequest[]
+  holidays               Holiday[]
+  leaveTypes             LeaveType[]
+  leaveBalances          LeaveBalance[]
+  leaveRequests          LeaveRequest[]
+  announcements          Announcement[]
+  hrPolicies             HrPolicy[]
+  onboardingTasks        OnboardingTask[]
+  compensationRecords    CompensationRecord[]
+  payrollRuns            PayrollRun[]
+  payslips               Payslip[]
+  helpDeskTickets        HelpDeskTicket[]
+  helpDeskReplies        HelpDeskReply[]
+  automationSettings     AutomationSetting[]
+  auditLogs              AuditLog[]
+  jobPostings            JobPosting[]
+  candidates             Candidate[]
+  jobApplications        JobApplication[]
+  interviews             Interview[]
+  integrationConnections IntegrationConnection[]
+  integrationMappings    IntegrationMapping[]
+  integrationTransfers   IntegrationTransfer[]
+  aiUsageDays            AiUsageDay[]
 
   @@map("organizations")
 }
@@ -162,6 +150,9 @@ model User {
   lockedUntil        DateTime?
   // Set for accounts created with a temporary password.
   mustChangePassword Boolean   @default(false)
+  /// Set when HRMS access is revoked (e.g. an effective exit). The shared
+  /// WorkEasy360 identity is untouched; only this product's access stops.
+  disabledAt         DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -243,13 +234,18 @@ model Employee {
   departmentId          String?
   managerId             String?
   dateOfJoining         DateTime?
-  // Personal details, filled in by the employee (My Profile); visible only to them and HR.
+  // Personal details, filled in by the employee (My Details); visible only to them and HR.
   dateOfBirth           DateTime?      @db.Date
   personalEmail         String?
   address               String?
   emergencyContactName  String?
   emergencyContactPhone String?
+  // Exit (Employees 2.4). History is retained; only HRMS access is revoked.
   exitDate              DateTime?      @db.Date
+  exitReason            String?
+  exitRecordedAt        DateTime?
+  exitRecordedById      String?
+  accessRevokedAt       DateTime?
   status                EmployeeStatus @default(ONBOARDING)
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
@@ -260,38 +256,64 @@ model Employee {
   manager       Employee?    @relation("ManagerHierarchy", fields: [managerId], references: [id])
   directReports Employee[]   @relation("ManagerHierarchy")
 
-  attendanceRecords AttendanceRecord[]
-  leaveRequests     LeaveRequest[]     @relation("LeaveRequester")
-  approvedRequests  LeaveRequest[]     @relation("LeaveApprover")
-  leaveBalances     LeaveBalance[]
-  announcements     Announcement[]
+  attendanceRecords   AttendanceRecord[]
+  correctionRequests  AttendanceCorrectionRequest[] @relation("CorrectionRequester")
+  reviewedCorrections AttendanceCorrectionRequest[] @relation("CorrectionApprover")
+  leaveRequests       LeaveRequest[]                @relation("LeaveRequester")
+  approvedRequests    LeaveRequest[]                @relation("LeaveApprover")
+  leaveBalances       LeaveBalance[]
+  announcements       Announcement[]
+  hrPolicies          HrPolicy[]
+  documents           EmployeeDocument[]            @relation("DocumentOwner")
+  uploadedDocuments   EmployeeDocument[]            @relation("DocumentUploader")
+  verifiedDocuments   EmployeeDocument[]            @relation("DocumentVerifier")
 
-  onboardingTasks     OnboardingTask[]
-  shiftAssignment     ShiftAssignment?
-  timesheetEntries    TimesheetEntry[]     @relation("TimesheetOwner")
-  approvedTimesheets  TimesheetEntry[]     @relation("TimesheetApprover")
-  compensationRecords CompensationRecord[]
-  payslips            Payslip[]
+  onboardingTasks      OnboardingTask[]
+  compensationRecords  CompensationRecord[]
+  payslips             Payslip[]
+  finalizedPayrollRuns PayrollRun[]         @relation("PayrollFinalizer")
 
-  performanceReviews     PerformanceReview[] @relation("ReviewSubject")
-  reviewsAsReviewer      PerformanceReview[] @relation("ReviewReviewer")
-  goals                  Goal[]
-  helpDeskTickets        HelpDeskTicket[]    @relation("TicketRequester")
-  assignedTickets        HelpDeskTicket[]    @relation("TicketAssignee")
-  hrGuideArticles        HrGuideArticle[]
-  createdAutomationRules AutomationRule[]
+  helpDeskTickets HelpDeskTicket[] @relation("TicketRequester")
+  assignedTickets HelpDeskTicket[] @relation("TicketAssignee")
+  helpDeskReplies HelpDeskReply[]  @relation("ReplyAuthor")
 
-  postedJobPostings  JobPosting[]   @relation("JobPostingPoster")
-  interviewsAsPanel  Interview[]    @relation("InterviewInterviewer")
-  expenseClaims      ExpenseClaim[] @relation("ExpenseOwner")
-  approvedExpenses   ExpenseClaim[] @relation("ExpenseApprover")
-  assignedAssets     Asset[]
-  loanRequests       LoanRequest[]  @relation("LoanOwner")
-  approvedLoans      LoanRequest[]  @relation("LoanApprover")
-  hiredFromCandidate Candidate?     @relation("CandidateHired")
+  updatedAutomationSettings AutomationSetting[]     @relation("AutomationSettingUpdater")
+  createdConnections        IntegrationConnection[] @relation("ConnectionCreator")
+
+  postedJobPostings    JobPosting[]     @relation("JobPostingPoster")
+  ownedJobPostings     JobPosting[]     @relation("JobPostingOwner")
+  ownedApplications    JobApplication[] @relation("ApplicationOwner")
+  interviewsAsPanel    Interview[]      @relation("InterviewInterviewer")
+  hiredFromApplication JobApplication?  @relation("ApplicationHired")
 
   @@unique([organizationId, employeeCode])
   @@map("employees")
+}
+
+/// Files attached to an employee profile (Employees 2.2.2). Content is stored in
+/// the row: the essential release has no object store, and uploads are capped.
+model EmployeeDocument {
+  id             String    @id @default(uuid())
+  organizationId String
+  employeeId     String
+  title          String
+  category       String?
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  content        Bytes
+  uploadedById   String?
+  verifiedAt     DateTime?
+  verifiedById   String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee     @relation("DocumentOwner", fields: [employeeId], references: [id], onDelete: Cascade)
+  uploadedBy   Employee?    @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  verifiedBy   Employee?    @relation("DocumentVerifier", fields: [verifiedById], references: [id])
+
+  @@index([organizationId, employeeId])
+  @@map("employee_documents")
 }
 
 model AttendanceRecord {
@@ -311,11 +333,55 @@ model AttendanceRecord {
   @@map("attendance_records")
 }
 
+/// Attendance and Leave 3.1.3 - request a fix to a day's punches with a reason;
+/// an authorized reviewer approves or rejects, and the decision is recorded.
+model AttendanceCorrectionRequest {
+  id                  String                  @id @default(uuid())
+  organizationId      String
+  employeeId          String
+  date                DateTime                @db.Date
+  requestedCheckInAt  DateTime?
+  requestedCheckOutAt DateTime?
+  reason              String
+  status              CorrectionRequestStatus @default(PENDING)
+  approverId          String?
+  decisionNote        String?
+  decidedAt           DateTime?
+  /// Set when no eligible approver exists, so the screen can show the
+  /// configuration problem instead of silently dropping the request.
+  routingNote         String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee     @relation("CorrectionRequester", fields: [employeeId], references: [id], onDelete: Cascade)
+  approver     Employee?    @relation("CorrectionApprover", fields: [approverId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("attendance_correction_requests")
+}
+
+/// Organization holidays (Settings 7.1.2). A holiday is never counted absent.
+model Holiday {
+  id             String   @id @default(uuid())
+  organizationId String
+  date           DateTime @db.Date
+  name           String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, date])
+  @@map("holidays")
+}
+
 model LeaveType {
   id                 String   @id @default(uuid())
   organizationId     String
   name               String
   defaultDaysPerYear Int      @default(0)
+  /// Unpaid leave reduces paid days in payroll (Payroll rule 07).
+  paid               Boolean  @default(true)
   createdAt          DateTime @default(now())
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -356,6 +422,9 @@ model LeaveRequest {
   approverId     String?
   decisionNote   String?
   decidedAt      DateTime?
+  /// Set when no eligible approver exists (rule 08), so the request stays
+  /// pending and the configuration problem is visible.
+  routingNote    String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -382,70 +451,41 @@ model Announcement {
   @@map("announcements")
 }
 
-model OnboardingTask {
+/// Settings 7.1.4 - simple publish/edit of HR policies, read by employees from
+/// Home. Not a content-management module.
+model HrPolicy {
   id             String    @id @default(uuid())
   organizationId String
-  employeeId     String
+  authorId       String
   title          String
-  done           Boolean   @default(false)
-  dueDate        DateTime? @db.Date
+  body           String
+  category       String?
+  publishedAt    DateTime?
   createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       Employee     @relation(fields: [authorId], references: [id])
+
+  @@map("hr_policies")
+}
+
+model OnboardingTask {
+  id                   String    @id @default(uuid())
+  organizationId       String
+  employeeId           String
+  title                String
+  done                 Boolean   @default(false)
+  /// Required submissions need an authorized HR check (Employees 2.3.2).
+  requiresVerification Boolean   @default(false)
+  verifiedAt           DateTime?
+  dueDate              DateTime? @db.Date
+  createdAt            DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@map("onboarding_tasks")
-}
-
-model ShiftTemplate {
-  id             String   @id @default(uuid())
-  organizationId String
-  name           String
-  startTime      String
-  endTime        String
-  createdAt      DateTime @default(now())
-
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  shiftAssignments ShiftAssignment[]
-
-  @@unique([organizationId, name])
-  @@map("shift_templates")
-}
-
-model ShiftAssignment {
-  id              String   @id @default(uuid())
-  organizationId  String
-  employeeId      String   @unique
-  shiftTemplateId String
-  effectiveFrom   DateTime @db.Date
-  updatedAt       DateTime @updatedAt
-
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  shiftTemplate ShiftTemplate @relation(fields: [shiftTemplateId], references: [id])
-
-  @@map("shift_assignments")
-}
-
-model TimesheetEntry {
-  id             String          @id @default(uuid())
-  organizationId String
-  employeeId     String
-  date           DateTime        @db.Date
-  hours          Float
-  task           String?
-  status         TimesheetStatus @default(PENDING)
-  approverId     String?
-  decidedAt      DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee     Employee     @relation("TimesheetOwner", fields: [employeeId], references: [id], onDelete: Cascade)
-  approver     Employee?    @relation("TimesheetApprover", fields: [approverId], references: [id])
-
-  @@unique([employeeId, date])
-  @@map("timesheet_entries")
 }
 
 model CompensationRecord {
@@ -470,10 +510,12 @@ model PayrollRun {
   month          Int
   year           Int
   status         PayrollRunStatus @default(DRAFT)
-  processedAt    DateTime?
+  finalizedAt    DateTime?
+  finalizedById  String?
   createdAt      DateTime         @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  finalizedBy  Employee?    @relation("PayrollFinalizer", fields: [finalizedById], references: [id])
   payslips     Payslip[]
 
   @@unique([organizationId, month, year])
@@ -481,115 +523,109 @@ model PayrollRun {
 }
 
 model Payslip {
-  id             String   @id @default(uuid())
-  organizationId String
-  payrollRunId   String
-  employeeId     String
-  grossPay       Float
-  deductions     Float
-  netPay         Float
-  createdAt      DateTime @default(now())
+  id                String    @id @default(uuid())
+  organizationId    String
+  payrollRunId      String
+  employeeId        String
+  grossPay          Float
+  deductions        Float
+  netPay            Float
+  /// Proration inputs (Payroll rule 07): days the employee was eligible in the
+  /// period and days actually payable after unpaid leave.
+  payableDays       Float     @default(0)
+  paidDays          Float     @default(0)
+  /// Everything the amounts were derived from, kept so a finalized payslip can
+  /// always be explained (Payroll rule 07).
+  calculationInputs Json?
+  /// Publishing makes the payslip visible to the employee. It does not mean the
+  /// salary was paid (Payroll rule 03).
+  publishedAt       DateTime?
+  revisionNumber    Int       @default(1)
+  /// The payslip this one corrects. The original row is never edited (rule 02).
+  revisionOfId      String?
+  revisionNote      String?
+  supersededAt      DateTime?
+  createdAt         DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   payrollRun   PayrollRun   @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  revisionOf   Payslip?     @relation("PayslipRevision", fields: [revisionOfId], references: [id])
+  revisions    Payslip[]    @relation("PayslipRevision")
 
-  @@unique([payrollRunId, employeeId])
+  @@unique([payrollRunId, employeeId, revisionNumber])
   @@map("payslips")
 }
 
-model ReviewCycle {
-  id             String            @id @default(uuid())
-  organizationId String
-  name           String
-  startDate      DateTime          @db.Date
-  endDate        DateTime          @db.Date
-  status         ReviewCycleStatus @default(DRAFT)
-  createdAt      DateTime          @default(now())
-
-  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  reviews      PerformanceReview[]
-  goals        Goal[]
-
-  @@map("review_cycles")
-}
-
-model PerformanceReview {
+model HelpDeskTicket {
   id                String       @id @default(uuid())
   organizationId    String
-  cycleId           String
+  /// Human-readable id shown on submission (Helpdesk 6.1.3).
+  reference         String
   employeeId        String
-  reviewerId        String?
-  selfAssessment    String?
-  managerAssessment String?
-  rating            Int?
-  status            ReviewStatus @default(PENDING)
+  type              TicketType   @default(HR_QUESTION)
+  queue             TicketQueue  @default(HR)
+  subject           String
+  description       String
+  status            TicketStatus @default(OPEN)
+  assignedToId      String?
+  reopenRequestedAt DateTime?
+  /// A sanitized product escalation is a separate linked ticket with its own
+  /// visibility (Helpdesk permissions 04); the private HR thread is not copied.
+  escalatedFromId   String?
+  escalationSummary String?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
+  resolvedAt        DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  cycle        ReviewCycle  @relation(fields: [cycleId], references: [id], onDelete: Cascade)
-  employee     Employee     @relation("ReviewSubject", fields: [employeeId], references: [id], onDelete: Cascade)
-  reviewer     Employee?    @relation("ReviewReviewer", fields: [reviewerId], references: [id])
+  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee      Employee         @relation("TicketRequester", fields: [employeeId], references: [id], onDelete: Cascade)
+  assignedTo    Employee?        @relation("TicketAssignee", fields: [assignedToId], references: [id])
+  escalatedFrom HelpDeskTicket?  @relation("TicketEscalation", fields: [escalatedFromId], references: [id])
+  escalations   HelpDeskTicket[] @relation("TicketEscalation")
+  replies       HelpDeskReply[]
 
-  @@unique([cycleId, employeeId])
-  @@map("performance_reviews")
-}
-
-model Goal {
-  id             String     @id @default(uuid())
-  organizationId String
-  employeeId     String
-  cycleId        String?
-  title          String
-  description    String?
-  status         GoalStatus @default(NOT_STARTED)
-  progress       Int        @default(0)
-  dueDate        DateTime?  @db.Date
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  cycle        ReviewCycle? @relation(fields: [cycleId], references: [id])
-
-  @@map("goals")
-}
-
-model HelpDeskTicket {
-  id             String       @id @default(uuid())
-  organizationId String
-  employeeId     String
-  category       String
-  subject        String
-  description    String
-  status         TicketStatus @default(OPEN)
-  assignedToId   String?
-  createdAt      DateTime     @default(now())
-  resolvedAt     DateTime?
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee     Employee     @relation("TicketRequester", fields: [employeeId], references: [id], onDelete: Cascade)
-  assignedTo   Employee?    @relation("TicketAssignee", fields: [assignedToId], references: [id])
-
+  @@unique([organizationId, reference])
+  @@index([organizationId, queue, status])
   @@map("helpdesk_tickets")
 }
 
-model AutomationRule {
-  id             String               @id @default(uuid())
+model HelpDeskReply {
+  id             String   @id @default(uuid())
   organizationId String
-  createdById    String
-  name           String
-  trigger        AutomationTrigger
-  actionType     AutomationActionType
-  actionConfig   Json
-  enabled        Boolean              @default(true)
-  createdAt      DateTime             @default(now())
+  ticketId       String
+  authorId       String
+  body           String
+  /// Internal notes stay with agents (Helpdesk permissions 03).
+  internal       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket       HelpDeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author       Employee       @relation("ReplyAuthor", fields: [authorId], references: [id])
+
+  @@index([ticketId])
+  @@map("helpdesk_replies")
+}
+
+/// Settings 7.5 - switches and timing for the fixed set of supported internal
+/// rules. Deliberately not a trigger/condition builder.
+model AutomationSetting {
+  id             String   @id @default(uuid())
+  organizationId String
+  key            String
+  enabled        Boolean  @default(true)
+  /// Timing option for reminder rules, in hours. Null for rules without timing.
+  timingHours    Int?
+  updatedById    String?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    Employee     @relation(fields: [createdById], references: [id])
+  updatedBy    Employee?    @relation("AutomationSettingUpdater", fields: [updatedById], references: [id])
 
-  @@map("automation_rules")
+  @@unique([organizationId, key])
+  @@map("automation_settings")
 }
 
 model AuditLog {
@@ -606,144 +642,177 @@ model AuditLog {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   actor        User?        @relation(fields: [actorUserId], references: [id])
 
+  @@index([organizationId, createdAt])
   @@map("audit_logs")
-}
-
-model HrGuideArticle {
-  id             String   @id @default(uuid())
-  organizationId String
-  authorId       String
-  title          String
-  body           String
-  category       String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  author       Employee     @relation(fields: [authorId], references: [id])
-
-  @@map("hr_guide_articles")
 }
 
 model JobPosting {
   id             String           @id @default(uuid())
   organizationId String
   postedById     String
+  hiringOwnerId  String?
   title          String
   departmentId   String?
+  location       String?
+  workMode       String?
   description    String
   status         JobPostingStatus @default(OPEN)
   createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  postedBy     Employee     @relation("JobPostingPoster", fields: [postedById], references: [id])
-  department   Department?  @relation(fields: [departmentId], references: [id])
-  candidates   Candidate[]
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  postedBy     Employee         @relation("JobPostingPoster", fields: [postedById], references: [id])
+  hiringOwner  Employee?        @relation("JobPostingOwner", fields: [hiringOwnerId], references: [id])
+  department   Department?      @relation(fields: [departmentId], references: [id])
+  applications JobApplication[]
 
   @@map("job_postings")
 }
 
+/// The person. One row per candidate, reused across applications (rule 02).
 model Candidate {
-  id              String         @id @default(uuid())
+  id              String   @id @default(uuid())
   organizationId  String
-  jobPostingId    String
   firstName       String
   lastName        String
   email           String
   phone           String?
+  /// Lower-cased email and digits-only phone, used to warn about duplicates.
+  normalizedEmail String
+  normalizedPhone String?
   source          String?
+  notes           String?
+  resumeFileName  String?
+  resumeMimeType  String?
+  resumeContent   Bytes?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  applications JobApplication[]
+
+  @@unique([organizationId, normalizedEmail])
+  @@index([organizationId, normalizedPhone])
+  @@map("candidates")
+}
+
+/// One candidate applying to one job. Stage and interview history live here.
+model JobApplication {
+  id              String         @id @default(uuid())
+  organizationId  String
+  candidateId     String
+  jobPostingId    String
+  hiringOwnerId   String?
   stage           CandidateStage @default(APPLIED)
   notes           String?
+  /// Set once, when joining is confirmed. Prevents duplicate employees on retry
+  /// (Hiring rule 03).
   hiredEmployeeId String?        @unique
+  joinedAt        DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
   organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  candidate     Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   jobPosting    JobPosting   @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  hiringOwner   Employee?    @relation("ApplicationOwner", fields: [hiringOwnerId], references: [id])
+  hiredEmployee Employee?    @relation("ApplicationHired", fields: [hiredEmployeeId], references: [id])
   interviews    Interview[]
-  hiredEmployee Employee?    @relation("CandidateHired", fields: [hiredEmployeeId], references: [id])
 
-  @@map("candidates")
+  @@unique([candidateId, jobPostingId])
+  @@map("job_applications")
 }
 
 model Interview {
   id             String   @id @default(uuid())
   organizationId String
-  candidateId    String
+  applicationId  String
   interviewerId  String
   scheduledAt    DateTime
+  location       String?
+  meetingLink    String?
   feedback       String?
-  rating         Int?
+  decision       String?
   createdAt      DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  candidate    Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  interviewer  Employee     @relation("InterviewInterviewer", fields: [interviewerId], references: [id])
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  application  JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  interviewer  Employee       @relation("InterviewInterviewer", fields: [interviewerId], references: [id])
 
+  @@index([organizationId, scheduledAt])
   @@map("interviews")
 }
 
-model ExpenseClaim {
-  id             String        @id @default(uuid())
-  organizationId String
-  employeeId     String
-  category       String
-  amount         Float
-  currency       String        @default("INR")
-  expenseDate    DateTime      @db.Date
-  description    String?
-  status         ExpenseStatus @default(PENDING)
-  approverId     String?
-  decisionNote   String?
-  decidedAt      DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee     Employee     @relation("ExpenseOwner", fields: [employeeId], references: [id], onDelete: Cascade)
-  approver     Employee?    @relation("ExpenseApprover", fields: [approverId], references: [id])
-
-  @@map("expense_claims")
-}
-
-model Asset {
-  id             String      @id @default(uuid())
+/// Settings 7.6 - HRMS's record of a WorkEasy Connect connection. Credentials,
+/// OAuth, delivery and retries belong to Connect; HRMS stores none of them.
+model IntegrationConnection {
+  id             String                      @id @default(uuid())
   organizationId String
   name           String
-  category       String
-  serialNumber   String?
-  status         AssetStatus @default(AVAILABLE)
-  assignedToId   String?
-  assignedAt     DateTime?
-  createdAt      DateTime    @default(now())
+  provider       String
+  direction      IntegrationDirection
+  status         IntegrationConnectionStatus @default(DRAFT)
+  /// Deep link into the shared Connect UI for this connection.
+  connectUrl     String?
+  /// Connect's own id for the connection, used to line up transfer history.
+  connectRef     String?
+  createdById    String?
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assignedTo   Employee?    @relation(fields: [assignedToId], references: [id])
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    Employee?             @relation("ConnectionCreator", fields: [createdById], references: [id])
+  mappings     IntegrationMapping[]
+  transfers    IntegrationTransfer[]
 
-  @@map("assets")
+  @@unique([organizationId, name])
+  @@map("integration_connections")
 }
 
-model LoanRequest {
-  id               String     @id @default(uuid())
-  organizationId   String
-  employeeId       String
-  amount           Float
-  reason           String?
-  emiMonths        Int
-  monthlyDeduction Float?
-  remainingAmount  Float?
-  status           LoanStatus @default(PENDING)
-  approverId       String?
-  decisionNote     String?
-  decidedAt        DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+/// Which authorized HRMS event or action a connection is wired to, and the
+/// approved field mapping. Only explicitly supported keys are accepted.
+model IntegrationMapping {
+  id             String               @id @default(uuid())
+  organizationId String
+  connectionId   String
+  direction      IntegrationDirection
+  /// Supported HRMS event key for outbound, or action key for inbound.
+  eventKey       String?
+  actionKey      String?
+  destination    String?
+  fieldMap       Json                 @default("{}")
+  enabled        Boolean              @default(false)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee     Employee     @relation("LoanOwner", fields: [employeeId], references: [id], onDelete: Cascade)
-  approver     Employee?    @relation("LoanApprover", fields: [approverId], references: [id])
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  transfers    IntegrationTransfer[]
 
-  @@map("loan_requests")
+  @@map("integration_mappings")
+}
+
+/// A read-only view of Connect's delivery history, filtered to HRMS. HRMS does
+/// not retry: Connect owns retries and failure visibility (Connect rule 09).
+model IntegrationTransfer {
+  id             String               @id @default(uuid())
+  organizationId String
+  connectionId   String
+  mappingId      String?
+  direction      IntegrationDirection
+  /// Stable source/event reference used for duplicate prevention (rule 08).
+  reference      String
+  status         String
+  message        String?
+  occurredAt     DateTime             @default(now())
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  mapping      IntegrationMapping?   @relation(fields: [mappingId], references: [id])
+
+  @@unique([organizationId, connectionId, reference])
+  @@index([organizationId, occurredAt])
+  @@map("integration_transfers")
 }
 
 /// One row per company per day: how much of the AI assistant's daily allowance

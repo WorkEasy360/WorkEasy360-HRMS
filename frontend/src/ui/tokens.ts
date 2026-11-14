@@ -59,8 +59,9 @@ export const color = {
 } as const;
 
 /**
- * Chart series in their fixed order: navy-blue, green, violet. A fourth series
- * folds into "Other" rather than taking a new colour.
+ * Chart series in their fixed order: blue, orange, aqua (validated all-pairs
+ * for three slots). A fourth series folds into "Other" rather than taking a
+ * new colour.
  */
 export const CHART_SERIES = [token("chart-1"), token("chart-2"), token("chart-3")] as const;
 

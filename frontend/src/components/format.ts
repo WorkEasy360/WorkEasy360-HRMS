@@ -65,6 +65,24 @@ export function formatMoney(value: number | string | null | undefined, currency 
   return fmt.format(n);
 }
 
+/** Whole currency units, for a large total in a stat tile ("₹8,10,000"). */
+export function formatMoneyWhole(value: number, currency = "INR"): string {
+  try {
+    return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 0, minimumFractionDigits: 0 }).format(value);
+  } catch {
+    return `${currency} ${Math.round(value)}`;
+  }
+}
+
+/** Short Indian-style amount for a tight tile: "₹8.1L", "₹1.2Cr". */
+export function formatMoneyCompact(value: number, currency = "INR"): string {
+  try {
+    return new Intl.NumberFormat("en-IN", { style: "currency", currency, notation: "compact", maximumFractionDigits: 1 }).format(value);
+  } catch {
+    return formatMoneyWhole(value, currency);
+  }
+}
+
 /** Today's date as YYYY-MM-DD in the user's own timezone (toISOString would give the UTC date). */
 export function localIsoDate(date: Date = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, "0");

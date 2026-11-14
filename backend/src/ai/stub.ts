@@ -111,13 +111,13 @@ export class StubProvider implements JsonCompletionProvider {
       }
       case "my_attendance": {
         const today = (d.today ?? {}) as { checkedIn?: boolean; checkedOut?: boolean; checkInAt?: string | null };
-        const month = (d.thisMonth ?? {}) as { daysPresent?: number; hours?: number };
+        const month = (d.thisMonth ?? {}) as { PRESENT?: number; hours?: number };
         const state = today.checkedOut
           ? "You've checked in and out today."
           : today.checkedIn
             ? "You're checked in today."
             : "You haven't checked in today.";
-        return `${state} This month: ${month.daysPresent ?? 0} day(s), ${month.hours ?? 0} hour(s).\n\n${STUB_NOTE}`;
+        return `${state} This month: ${month.PRESENT ?? 0} day(s) present, ${month.hours ?? 0} hour(s).\n\n${STUB_NOTE}`;
       }
       case "pending_approvals": {
         const c = (d.counts ?? {}) as Record<string, number>;
@@ -132,17 +132,18 @@ export class StubProvider implements JsonCompletionProvider {
           (member.roles ?? []).join(", ") || "no"
         } role. Today is ${d.today ?? "today"}, and there are ${d.activeEmployees ?? "an unknown number of"} active employees.\n\n${STUB_NOTE}`;
       }
-      case "leave_types": {
-        const types = arr as { name: string; defaultDaysPerYear: number }[];
-        if (!types.length) return `No leave types are set up for this company yet.\n\n${STUB_NOTE}`;
-        return `This company has ${types.map((t) => `${t.name} (${t.defaultDaysPerYear}/year)`).join(", ")}.\n\n${STUB_NOTE}`;
+      case "work_schedule": {
+        const days = (d.workingDays ?? []) as string[];
+        if (!days.length) return `No work schedule is set up for this company yet.\n\n${STUB_NOTE}`;
+        return `Working days are ${days.join(", ")}, ${d.hours ?? ""}, in ${d.timeZone ?? "the company time zone"}.\n\n${STUB_NOTE}`;
+      }
+      case "attendance_today": {
+        return `Today: ${d.present ?? 0} present, ${d.onLeave ?? 0} on leave, ${d.notYetCheckedIn ?? 0} not yet checked in, ${d.absent ?? 0} absent.\n\n${STUB_NOTE}`;
       }
       case "my_payslips":
-      case "my_expenses":
-      case "my_timesheets":
-      case "my_goals":
+      case "my_corrections":
       case "my_onboarding_tasks":
-      case "my_assets":
+      case "policy_search":
       case "helpdesk_tickets":
       case "recent_announcements":
       case "search_employees":
@@ -159,18 +160,15 @@ const STUB_NOTE =
 /** First match wins, so put the more specific words first. */
 const KEYWORDS: [string, string[]][] = [
   ["pending_approvals", ["approve", "approval", "waiting on me", "to decide", "sign off"]],
-  ["leave_types", ["leave type", "leave types", "kinds of leave"]],
-  ["my_leave", ["leave", "time off", "holiday", "vacation", "pto", "day off", "days off"]],
+  ["my_corrections", ["correction", "forgot to check", "wrong attendance", "fix my attendance"]],
+  ["work_schedule", ["working day", "working days", "work schedule", "office hours", "holiday list", "holidays"]],
+  ["my_leave", ["leave", "time off", "vacation", "pto", "day off", "days off"]],
+  ["attendance_today", ["who is in", "who's in", "present today", "today's attendance"]],
   ["my_attendance", ["checked in", "check in", "check out", "attendance", "punch", "clock"]],
-  ["my_timesheets", ["timesheet", "hours", "logged time"]],
   ["my_payslips", ["payslip", "salary", "pay ", "net pay", "ctc"]],
-  ["my_expenses", ["expense", "claim", "reimburse"]],
-  ["my_loans", ["loan", "advance", "emi"]],
-  ["my_goals", ["goal", "okr", "objective"]],
-  ["my_onboarding_tasks", ["onboarding", "checklist", "my tasks"]],
-  ["my_assets", ["asset", "laptop", "equipment", "device"]],
+  ["my_onboarding_tasks", ["onboarding", "joining", "checklist", "my tasks"]],
   ["helpdesk_tickets", ["ticket", "help desk", "helpdesk", "support"]],
-  ["hr_guide_search", ["policy", "policies", "handbook", "notice period", "guide"]],
+  ["policy_search", ["policy", "policies", "handbook", "notice period"]],
   ["recent_announcements", ["announcement", "news"]],
   ["search_employees", ["who is", "who's", "directory", "team", "colleague", "reports to"]],
   ["my_profile", ["my profile", "my details", "my manager", "my department"]],
@@ -178,18 +176,16 @@ const KEYWORDS: [string, string[]][] = [
 
 /** Where an answer about each tool naturally points. */
 const LINK_FOR: Record<string, string | undefined> = {
-  my_leave: "my_leave",
-  my_attendance: "my_attendance",
-  my_timesheets: "my_timesheet",
-  my_payslips: "my_payslips",
-  my_expenses: "my_expenses",
-  my_loans: "my_loans",
-  my_goals: "my_goals",
-  my_onboarding_tasks: "my_tasks",
-  my_assets: "my_assets",
-  pending_approvals: "approvals",
+  my_leave: "attendance",
+  my_attendance: "attendance",
+  my_corrections: "attendance",
+  work_schedule: "attendance",
+  attendance_today: "attendance",
+  my_payslips: "payslips",
+  my_onboarding_tasks: "my_details",
+  pending_approvals: "attendance",
   helpdesk_tickets: "helpdesk",
-  recent_announcements: "announcements",
-  hr_guide_search: "hr_guide",
-  my_profile: "my_profile",
+  recent_announcements: "home",
+  policy_search: "home",
+  my_profile: "my_details",
 };

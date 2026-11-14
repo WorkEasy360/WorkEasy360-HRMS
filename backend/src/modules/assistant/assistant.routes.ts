@@ -49,10 +49,14 @@ async function buildContext(userId: string): Promise<AssistantContext | null> {
   // Read roles and permissions fresh rather than trusting the 15-minute token,
   // so a role change takes effect on the next question.
   const { user, roles, permissions, employeeId } = await loadUserContext(userId);
-  const organization = await prisma.organization.findUnique({ where: { id: user.organizationId }, select: { name: true } });
+  const organization = await prisma.organization.findUnique({
+    where: { id: user.organizationId },
+    select: { name: true, timezone: true },
+  });
   if (!organization) return null;
 
-  const timeZone = process.env.APP_TIMEZONE?.trim() || "Asia/Kolkata";
+  // The organization's own timezone decides what "today" means (rule 03).
+  const timeZone = organization.timezone?.trim() || process.env.APP_TIMEZONE?.trim() || "Asia/Kolkata";
   let todayLocal: string;
   try {
     todayLocal = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -60,8 +64,9 @@ async function buildContext(userId: string): Promise<AssistantContext | null> {
     todayLocal = new Date().toISOString().slice(0, 10);
   }
 
-  // Approver either by permission or by having someone report to them.
-  const managePermissions = ["leave:manage", "timesheet:manage", "expense:manage", "loan:manage"];
+  // Approver either by holding an org-wide approval permission, or by having
+  // someone report to them with the manager-level permission.
+  const managePermissions = ["leave:manage", "attendance:manage", "leave:approve", "attendance:approve"];
   const directReports =
     employeeId && !managePermissions.some((p) => permissions.includes(p))
       ? await prisma.employee.count({ where: { organizationId: user.organizationId, managerId: employeeId } })
@@ -103,8 +108,12 @@ async function resolveLink(navigate: string | null, ctx: AssistantContext): Prom
     return employee ? { label: `${employee.firstName} ${employee.lastName}`, path: spec.path(recordId) } : null;
   }
 
-  const article = await prisma.hrGuideArticle.findFirst({ where: { id: recordId, organizationId: ctx.organizationId }, select: { title: true } });
-  return article ? { label: article.title, path: spec.path(recordId) } : null;
+  // Only a published policy can be linked: a draft is not readable yet.
+  const policy = await prisma.hrPolicy.findFirst({
+    where: { id: recordId, organizationId: ctx.organizationId, publishedAt: { not: null } },
+    select: { title: true },
+  });
+  return policy ? { label: policy.title, path: spec.path(recordId) } : null;
 }
 
 router.get("/", async (req, res) => {

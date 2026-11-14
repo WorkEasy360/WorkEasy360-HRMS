@@ -13,6 +13,7 @@
 export { Button, IconButton } from "./components/button";
 export {
   Alert,
+  Avatar,
   Badge,
   Card,
   CardBody,
@@ -29,6 +30,7 @@ export {
   type ValueTone,
 } from "./components/page";
 export { AgentAvatar } from "./components/agent-avatar";
+export { BarTrend, Donut, LineTrend, type ChartPoint, type DonutSlice } from "./components/charts";
 export { BrandMark, Lockup, PRODUCT_NAME } from "./components/logo";
 export { ThemeToggle, themeScript, type Theme } from "./components/theme-toggle";
 export { CHART_OTHER, CHART_SERIES, color, motion, radius, size, type Tone } from "./tokens";

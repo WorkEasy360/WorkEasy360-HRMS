@@ -2,6 +2,13 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  /** Work schedule (Settings 7.1.2). */
+  timezone: string;
+  /** ISO weekday numbers: 1 = Monday .. 7 = Sunday. */
+  workingDays: number[];
+  workStartTime: string;
+  workEndTime: string;
+  fullDayHours: number;
 }
 
 export interface Department {
@@ -32,6 +39,11 @@ export interface Employee {
   address?: string | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  // Exit (Employees 2.4). History is kept; only access stops.
+  exitDate?: string | null;
+  exitReason?: string | null;
+  exitRecordedAt?: string | null;
+  accessRevokedAt?: string | null;
 }
 
 export interface CurrentUser {
@@ -45,6 +57,8 @@ export interface CurrentUser {
   mustChangePassword?: boolean;
 }
 
+/* ─── Attendance & Leave ─────────────────────────────────────────────── */
+
 export interface AttendanceRecord {
   id: string;
   employeeId: string;
@@ -54,10 +68,81 @@ export interface AttendanceRecord {
   employee?: { firstName: string; lastName: string; employeeCode: string };
 }
 
+/**
+ * How one day is counted. NOT_CHECKED_IN is deliberately distinct from ABSENT:
+ * a working day only becomes absent once it has finished.
+ */
+export type DayStatus = "HOLIDAY" | "WEEKLY_OFF" | "ON_LEAVE" | "PRESENT" | "NOT_CHECKED_IN" | "ABSENT";
+
+export interface Holiday {
+  id: string;
+  date: string;
+  name: string;
+}
+
+export interface WorkSchedule {
+  timezone: string;
+  workingDays: number[];
+  workStartTime: string;
+  workEndTime: string;
+  fullDayHours: number;
+  holidays: { date: string; name: string }[];
+  leaveTypes: LeaveType[];
+}
+
+export interface AttendanceRegister {
+  date: string;
+  isWorkingDay: boolean;
+  holiday: string | null;
+  rows: {
+    employeeId: string;
+    name: string;
+    employeeCode: string;
+    department: string | null;
+    checkInAt: string | null;
+    checkOutAt: string | null;
+    missingCheckOut: boolean;
+    status: DayStatus;
+  }[];
+}
+
+export interface AttendanceSummary {
+  month: string;
+  employeeId: string;
+  workingDays: number;
+  HOLIDAY: number;
+  WEEKLY_OFF: number;
+  ON_LEAVE: number;
+  PRESENT: number;
+  NOT_CHECKED_IN: number;
+  ABSENT: number;
+  records: { date: string; checkInAt: string | null; checkOutAt: string | null }[];
+}
+
+export type CorrectionStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+
+export interface AttendanceCorrection {
+  id: string;
+  employeeId: string;
+  date: string;
+  requestedCheckInAt: string | null;
+  requestedCheckOutAt: string | null;
+  reason: string;
+  status: CorrectionStatus;
+  decisionNote: string | null;
+  decidedAt: string | null;
+  /** Set when no approver is configured, so the gap is visible. */
+  routingNote: string | null;
+  employee?: { firstName: string; lastName: string; employeeCode: string };
+  approver?: { firstName: string; lastName: string } | null;
+}
+
 export interface LeaveType {
   id: string;
   name: string;
   defaultDaysPerYear: number;
+  /** Unpaid leave reduces paid days in payroll. */
+  paid: boolean;
 }
 
 export type LeaveRequestStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
@@ -73,8 +158,11 @@ export interface LeaveRequest {
   reason: string | null;
   status: LeaveRequestStatus;
   decisionNote: string | null;
+  routingNote: string | null;
   employee?: { firstName: string; lastName: string; employeeCode: string };
 }
+
+/* ─── Home content ───────────────────────────────────────────────────── */
 
 export interface Announcement {
   id: string;
@@ -84,41 +172,43 @@ export interface Announcement {
   author: { firstName: string; lastName: string };
 }
 
+export interface HrPolicy {
+  id: string;
+  title: string;
+  body?: string;
+  category: string | null;
+  publishedAt: string | null;
+  updatedAt: string;
+  author: { id: string; firstName: string; lastName: string };
+}
+
 export interface OnboardingTask {
   id: string;
   title: string;
   done: boolean;
   dueDate: string | null;
+  requiresVerification: boolean;
+  verifiedAt: string | null;
   employee?: { firstName: string; lastName: string; employeeCode: string };
 }
 
-export interface ShiftTemplate {
-  id: string;
-  name: string;
-  startTime: string;
-  endTime: string;
-}
+/* ─── Documents ──────────────────────────────────────────────────────── */
 
-export interface ShiftAssignment {
+export interface EmployeeDocument {
   id: string;
   employeeId: string;
-  shiftTemplateId: string;
-  effectiveFrom: string;
-  shiftTemplate: ShiftTemplate;
-  employee?: { firstName: string; lastName: string; employeeCode: string };
+  title: string;
+  category: string | null;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  verifiedAt: string | null;
+  createdAt: string;
+  uploadedBy: { id: string; firstName: string; lastName: string } | null;
+  verifiedBy: { id: string; firstName: string; lastName: string } | null;
 }
 
-export type TimesheetStatus = "PENDING" | "APPROVED" | "REJECTED";
-
-export interface TimesheetEntry {
-  id: string;
-  employeeId: string;
-  date: string;
-  hours: number;
-  task: string | null;
-  status: TimesheetStatus;
-  employee?: { firstName: string; lastName: string; employeeCode: string };
-}
+/* ─── Payroll ────────────────────────────────────────────────────────── */
 
 export interface CompensationRecord {
   id: string;
@@ -129,90 +219,169 @@ export interface CompensationRecord {
   currency: string;
 }
 
-export type PayrollRunStatus = "DRAFT" | "PROCESSED";
+export type PayrollRunStatus = "DRAFT" | "FINALIZED";
 
 export interface PayrollRun {
   id: string;
   month: number;
   year: number;
   status: PayrollRunStatus;
-  processedAt: string | null;
+  finalizedAt: string | null;
+  finalizedById: string | null;
+  _count?: { payslips: number };
 }
 
 export interface Payslip {
   id: string;
   employeeId: string;
+  payrollRunId: string;
   grossPay: number;
   deductions: number;
   netPay: number;
+  payableDays: number;
+  paidDays: number;
+  calculationInputs: Record<string, unknown> | null;
+  /** Published means readable by the employee. It is not a payment. */
+  publishedAt: string | null;
+  revisionNumber: number;
+  revisionOfId: string | null;
+  revisionNote: string | null;
+  supersededAt: string | null;
   createdAt: string;
   payrollRun?: { month: number; year: number; status: PayrollRunStatus };
   employee?: { firstName: string; lastName: string; employeeCode: string };
 }
 
-export type ReviewCycleStatus = "DRAFT" | "ACTIVE" | "CLOSED";
+/* ─── Helpdesk ───────────────────────────────────────────────────────── */
 
-export interface ReviewCycle {
-  id: string;
-  name: string;
-  startDate: string;
-  endDate: string;
-  status: ReviewCycleStatus;
-}
-
-export type ReviewStatus = "PENDING" | "SELF_SUBMITTED" | "MANAGER_SUBMITTED" | "COMPLETED";
-
-export interface PerformanceReview {
-  id: string;
-  cycleId: string;
-  cycle: ReviewCycle;
-  employeeId: string;
-  reviewerId: string | null;
-  selfAssessment: string | null;
-  managerAssessment: string | null;
-  rating: number | null;
-  status: ReviewStatus;
-  employee?: { firstName: string; lastName: string; employeeCode: string };
-}
-
-export type GoalStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
-
-export interface Goal {
-  id: string;
-  employeeId: string;
-  title: string;
-  description: string | null;
-  status: GoalStatus;
-  progress: number;
-  dueDate: string | null;
-  employee?: { firstName: string; lastName: string; employeeCode: string };
-}
-
-export type TicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+export type TicketType = "HR_QUESTION" | "PRODUCT_PROBLEM";
+export type TicketQueue = "HR" | "PAYROLL" | "PRODUCT";
+export type TicketStatus = "OPEN" | "IN_PROGRESS" | "WAITING" | "RESOLVED" | "CLOSED";
 
 export interface HelpDeskTicket {
   id: string;
-  category: string;
+  reference: string;
+  type: TicketType;
+  queue: TicketQueue;
   subject: string;
-  description: string;
+  description?: string;
   status: TicketStatus;
-  assignedToId: string | null;
+  assignedToId?: string | null;
+  reopenRequestedAt: string | null;
+  escalatedFromId: string | null;
+  escalationSummary?: string | null;
   createdAt: string;
+  updatedAt: string;
   resolvedAt: string | null;
-  employee?: { firstName: string; lastName: string; employeeCode: string };
-  assignedTo?: { firstName: string; lastName: string } | null;
+  employee?: { id: string; firstName: string; lastName: string; employeeCode: string };
+  assignedTo?: { id: string; firstName: string; lastName: string } | null;
+  escalations?: { id: string; reference: string; status: TicketStatus; queue: TicketQueue }[];
+  escalatedFrom?: { id: string; reference: string } | null;
 }
 
-export type AutomationTrigger = "LEAVE_APPROVED" | "EMPLOYEE_ONBOARDED" | "TIMESHEET_APPROVED";
-export type AutomationActionType = "CREATE_ANNOUNCEMENT" | "ASSIGN_ONBOARDING_TASK";
+export interface HelpDeskReply {
+  id: string;
+  ticketId: string;
+  body: string;
+  internal: boolean;
+  createdAt: string;
+  author: { id: string; firstName: string; lastName: string };
+}
 
-export interface AutomationRule {
+/* ─── Hiring ─────────────────────────────────────────────────────────── */
+
+export type JobPostingStatus = "OPEN" | "ON_HOLD" | "CLOSED";
+
+export interface JobPosting {
+  id: string;
+  title: string;
+  description: string;
+  departmentId: string | null;
+  department?: { id: string; name: string } | null;
+  location: string | null;
+  workMode: string | null;
+  hiringOwnerId: string | null;
+  hiringOwner?: { id: string; firstName: string; lastName: string } | null;
+  status: JobPostingStatus;
+  _count?: { applications: number };
+}
+
+export type CandidateStage = "APPLIED" | "SHORTLISTED" | "INTERVIEW" | "SELECTED" | "REJECTED" | "JOINED";
+
+export interface Interview {
+  id: string;
+  interviewerId?: string;
+  interviewer?: { id: string; firstName: string; lastName: string };
+  scheduledAt: string;
+  location: string | null;
+  meetingLink: string | null;
+  feedback: string | null;
+  decision: string | null;
+  application?: {
+    id: string;
+    stage?: CandidateStage;
+    candidate: { id?: string; firstName: string; lastName: string };
+    jobPosting: { title: string };
+  };
+}
+
+/** The person. One row, reused across every job they apply to. */
+export interface Candidate {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  source: string | null;
+  notes: string | null;
+  resumeFileName: string | null;
+  resumeMimeType?: string | null;
+  createdAt: string;
+  applications?: JobApplication[];
+}
+
+/** One candidate applying to one job. Stage and interviews live here. */
+export interface JobApplication {
+  id: string;
+  stage: CandidateStage;
+  notes: string | null;
+  joinedAt: string | null;
+  hiredEmployeeId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  jobPosting: { id: string; title: string; status: JobPostingStatus };
+  hiringOwner: { id: string; firstName: string; lastName: string } | null;
+  candidate: Candidate;
+  interviews?: Interview[];
+  _count?: { interviews: number };
+}
+
+/* ─── Settings ───────────────────────────────────────────────────────── */
+
+export interface Role {
   id: string;
   name: string;
-  trigger: AutomationTrigger;
-  actionType: AutomationActionType;
-  actionConfig: Record<string, unknown>;
-  enabled: boolean;
+  isSystem: boolean;
+  permissions: string[];
+}
+
+export interface OrgMember {
+  userId: string;
+  email: string;
+  employeeId: string | null;
+  name: string;
+  employeeCode: string | null;
+  employeeStatus: EmployeeStatus | null;
+  accessRevoked: boolean;
+  roles: { id: string; name: string }[];
+  occupiesSeat: boolean;
+}
+
+export interface MembersResponse {
+  members: OrgMember[];
+  seatsInUse: number;
+  employeeRecords: number;
+  note: string;
 }
 
 export interface AuditLog {
@@ -226,110 +395,60 @@ export interface AuditLog {
   actor?: { email: string } | null;
 }
 
-export interface HrGuideArticle {
-  id: string;
-  title: string;
-  body: string;
-  category: string | null;
-  updatedAt: string;
-  author: { firstName: string; lastName: string };
-}
-
-export interface HeadcountReport {
-  total: number;
-  byStatus: { status: EmployeeStatus; count: number }[];
-  byDepartment: { department: string; count: number }[];
-}
-
-export interface AttritionReport {
-  totalExits: number;
-  byMonth: { month: string; count: number }[];
-}
-
-export interface LeaveLiabilityReport {
-  year: number;
-  byLeaveType: { leaveType: string; remainingDays: number; usedDays: number }[];
-}
-
-export interface PayrollCostReport {
-  byRun: { month: number; year: number; grossTotal: number; netTotal: number; employeeCount: number }[];
-}
-
-export type JobPostingStatus = "OPEN" | "CLOSED";
-
-export interface JobPosting {
-  id: string;
-  title: string;
+/** One supported internal rule (Settings 7.5), with its switch and timing. */
+export interface AutomationRule {
+  key: string;
+  label: string;
   description: string;
-  departmentId: string | null;
-  department?: { name: string } | null;
-  status: JobPostingStatus;
-  _count?: { candidates: number };
+  timingOptions: number[] | null;
+  enabled: boolean;
+  timingHours: number | null;
 }
 
-export type CandidateStage = "APPLIED" | "SCREENING" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED";
+/* ─── Integrations, powered by WorkEasy Connect ──────────────────────── */
 
-export interface Interview {
+export type IntegrationDirection = "INBOUND" | "OUTBOUND";
+export type IntegrationConnectionStatus = "DRAFT" | "ACTIVE" | "DISABLED" | "COMING_SOON";
+
+export interface IntegrationMapping {
   id: string;
-  candidateId: string;
-  interviewerId: string;
-  scheduledAt: string;
-  feedback: string | null;
-  rating: number | null;
-  candidate?: { firstName: string; lastName: string; jobPosting: { title: string } };
+  connectionId: string;
+  direction: IntegrationDirection;
+  eventKey: string | null;
+  actionKey: string | null;
+  destination: string | null;
+  fieldMap: Record<string, string>;
+  enabled: boolean;
 }
 
-export interface Candidate {
-  id: string;
-  jobPostingId: string;
-  jobPosting?: { title: string };
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string | null;
-  source: string | null;
-  stage: CandidateStage;
-  notes: string | null;
-  hiredEmployeeId: string | null;
-  interviews?: Interview[];
-}
-
-export type ExpenseStatus = "PENDING" | "APPROVED" | "REJECTED" | "REIMBURSED";
-
-export interface ExpenseClaim {
-  id: string;
-  employeeId: string;
-  category: string;
-  amount: number;
-  currency: string;
-  expenseDate: string;
-  description: string | null;
-  status: ExpenseStatus;
-  employee?: { firstName: string; lastName: string; employeeCode: string };
-}
-
-export type AssetStatus = "AVAILABLE" | "ASSIGNED" | "RETIRED";
-
-export interface Asset {
+export interface IntegrationConnection {
   id: string;
   name: string;
-  category: string;
-  serialNumber: string | null;
-  status: AssetStatus;
-  assignedToId: string | null;
-  assignedTo?: { firstName: string; lastName: string; employeeCode: string } | null;
+  provider: string;
+  direction: IntegrationDirection;
+  status: IntegrationConnectionStatus;
+  connectUrl: string | null;
+  connectRef: string | null;
+  createdAt: string;
+  createdBy: { id: string; firstName: string; lastName: string } | null;
+  mappings: IntegrationMapping[];
+  _count?: { transfers: number };
 }
 
-export type LoanStatus = "PENDING" | "APPROVED" | "REJECTED" | "ACTIVE" | "CLOSED";
-
-export interface LoanRequest {
+export interface IntegrationTransfer {
   id: string;
-  employeeId: string;
-  amount: number;
-  reason: string | null;
-  emiMonths: number;
-  monthlyDeduction: number | null;
-  remainingAmount: number | null;
-  status: LoanStatus;
-  employee?: { firstName: string; lastName: string; employeeCode: string };
+  direction: IntegrationDirection;
+  reference: string;
+  status: string;
+  message: string | null;
+  occurredAt: string;
+  connection: { id: string; name: string; provider: string };
+  mapping: { id: string; eventKey: string | null; actionKey: string | null } | null;
+}
+
+export interface IntegrationCatalog {
+  connectBaseUrl: string;
+  connectors: { provider: string; label: string; direction: string; released: boolean; status: string }[];
+  events: { key: string; label: string; fields: string[] }[];
+  actions: { key: string; label: string; fields: string[]; note?: string }[];
 }

@@ -16,39 +16,47 @@
   --we-logo: #00bf62;
 
   /* Structure -------------------------------------------------------------- */
-  --we-primary: #1b3040;
-  --we-primary-hover: #112532;
-  /* Text on navy fills (sidebar, bulk bar, hero). */
-  --we-on-primary: #f1f5f9;
-  --we-on-primary-muted: #94a3b8;
+  /* The deep WorkEasy360 green of the sidebar and other dark regions. */
+  --we-primary: #0c4f37;
+  --we-primary-hover: #0e5c41;
+  /* The sidebar runs top to bottom from the primary green to a deeper step. */
+  --we-sidebar-top: #0c4f37;
+  --we-sidebar-bottom: #073326;
+  /* Text on the green fills (sidebar, hero). */
+  --we-on-primary: #e7f5ee;
+  --we-on-primary-muted: #a3c8b6;
+  /* The active sidebar item: a solid green pill. White on it is 5.0:1. */
+  --we-nav-active: #15803d;
+  --we-on-nav-active: #ffffff;
 
   /* Accent ----------------------------------------------------------------- */
-  --we-accent: #4ade80;
-  --we-accent-hover: #22c55e;
-  --we-on-accent: #1b3040;
+  /* The action green: primary buttons, active tabs, links. White on it is 5.0:1. */
+  --we-accent: #15803d;
+  --we-accent-hover: #166534;
+  --we-on-accent: #ffffff;
   --we-accent-soft: #dcfce7;
   --we-accent-strong: #166534;
 
   /* Surfaces --------------------------------------------------------------- */
-  --we-background: #f8fafc;
+  --we-background: #f4f7f5;
   --we-surface: #ffffff;
-  --we-surface-muted: #f1f5f9;
+  --we-surface-muted: #f1f5f3;
 
   /* Lines ------------------------------------------------------------------ */
-  --we-border: #e2e8f0;
-  --we-border-strong: #cbd5e1;
-  --we-border-input: #7d8ba0;
+  --we-border: #e3e9e5;
+  --we-border-strong: #c9d4ce;
+  --we-border-input: #7d8b85;
 
   /* Text ------------------------------------------------------------------- */
-  --we-text-primary: #1b3040;
-  --we-text-body: #334155;
-  --we-text-secondary: #64748b;
-  --we-link: #166534;
+  --we-text-primary: #101828;
+  --we-text-body: #344054;
+  --we-text-secondary: #5d6b7a;
+  --we-link: #15803d;
 
   /* Focus ------------------------------------------------------------------ */
-  --we-focus: #1b3040;
-  /* Focus on navy surfaces, where the navy ring would disappear. */
-  --we-focus-on-primary: #4ade80;
+  --we-focus: #15803d;
+  /* Focus on green regions, where the green ring would disappear. */
+  --we-focus-on-primary: #86efac;
 
   /* Status ----------------------------------------------------------------- */
   --we-success: #16a34a;
@@ -72,13 +80,27 @@
   /* Star ratings only. Never a chart series. */
   --we-rating: #b45309;
 
-  /* Charts ----------------------------------------------------------------- */
-  --we-chart-1: #235e9c;
-  --we-chart-2: #16a34a;
-  --we-chart-3: #8b5cf6;
+  /* Charts — validated with the dataviz palette script, see docs/design-system.md.
+     Categorical, fixed order, all-pairs safe for three slots. */
+  --we-chart-1: #2a78d6;
+  --we-chart-2: #eb6834;
+  --we-chart-3: #1baf7a;
+  /* A single-series magnitude chart (attendance trend). 3.3:1 on white. */
+  --we-chart-single: #16a34a;
+  /* The attendance-status breakdown, in donut order. Not-checked-in is a
+     deliberate neutral so present (green) and absent (red) never touch. */
+  --we-chart-present: #16a34a;
+  --we-chart-leave: #2563eb;
+  --we-chart-absent: #dc2626;
+  --we-chart-pending: #94a3b8;
+  /* The laptop drawn on the sign-in hero: bezel, base and its shaded edge. */
+  --we-device-frame: #1f2937;
+  --we-device-base: #d1d9e0;
+  --we-device-edge: #9aa7b4;
+  --we-chart-grid: #e8ede9;
 
   /* Scrims over the page, under dialogs and drawers. */
-  --we-scrim: rgb(27 48 64 / 45%);
+  --we-scrim: rgb(6 40 28 / 45%);
 
   /* Type ------------------------------------------------------------------- */
   --we-font-size-xs: 0.75rem; /* 12 — metadata */
@@ -103,25 +125,25 @@
 
   /* Shape ------------------------------------------------------------------ */
   --we-radius-sm: 6px; /* tags, small chips */
-  --we-radius-md: 8px; /* inputs, buttons, menu items */
-  --we-radius-lg: 12px; /* cards, tables, popovers */
+  --we-radius-md: 10px; /* inputs, buttons, menu items */
+  --we-radius-lg: 14px; /* cards, tables, popovers */
   --we-radius-xl: 16px; /* dialogs */
   --we-radius-full: 9999px;
 
   /* Shadows — nearly flat, except the floating layer ---------------------- */
-  --we-shadow-sm: 0 1px 2px 0 rgb(27 48 64 / 6%);
-  --we-shadow-md: 0 2px 6px -1px rgb(27 48 64 / 10%);
-  --we-shadow-lg: 0 10px 24px -6px rgb(27 48 64 / 18%);
+  --we-shadow-sm: 0 1px 3px 0 rgb(16 24 40 / 5%), 0 1px 2px -1px rgb(16 24 40 / 4%);
+  --we-shadow-md: 0 4px 10px -2px rgb(16 24 40 / 8%);
+  --we-shadow-lg: 0 12px 28px -8px rgb(16 24 40 / 18%);
 
   /* Sizes ------------------------------------------------------------------ */
-  --we-size-sidebar: 15.5rem; /* 248 */
-  --we-size-topbar: 3.5rem; /* 56 */
-  --we-size-control: 2.25rem; /* 36 */
+  --we-size-sidebar: 16rem; /* 256 */
+  --we-size-topbar: 4.25rem; /* 68 */
+  --we-size-control: 2.5rem; /* 40 */
   --we-size-control-sm: 1.875rem; /* 30 */
-  --we-size-nav-item: 2.25rem; /* 36 */
-  --we-size-icon: 1.125rem; /* 18 */
+  --we-size-nav-item: 2.75rem; /* 44 */
+  --we-size-icon: 1.25rem; /* 20 */
   --we-size-fab: 3.5rem; /* 56 — the assistant launcher */
-  --we-size-page: 75rem; /* 1200 */
+  --we-size-page: 82rem; /* 1312 */
   --we-size-page-narrow: 55rem; /* 880 */
 
   /* Motion ----------------------------------------------------------------- */
@@ -133,32 +155,36 @@
 /* Dark values, applied when the OS asks for dark and nobody chose light. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --we-primary: #27455a;
-    --we-primary-hover: #315770;
-    --we-on-primary: #f1f5f9;
-    --we-on-primary-muted: #aebbcb; /* 5.2:1 on the dark navy */
+    --we-primary: #0b3326;
+    --we-primary-hover: #0f4130;
+    --we-sidebar-top: #0c3a2b;
+    --we-sidebar-bottom: #082a1f;
+    --we-on-primary: #e7f5ee;
+    --we-on-primary-muted: #9ec2b1;
+    --we-nav-active: #15803d;
+    --we-on-nav-active: #ffffff;
 
-    --we-accent: #4ade80;
-    --we-accent-hover: #22c55e;
-    --we-on-accent: #112532;
-    --we-accent-soft: #14432a;
+    --we-accent: #22c55e;
+    --we-accent-hover: #4ade80;
+    --we-on-accent: #052e16;
+    --we-accent-soft: #133d27;
     --we-accent-strong: #86efac;
 
-    --we-background: #0b1620;
-    --we-surface: #112532;
-    --we-surface-muted: #16303f;
+    --we-background: #0a1612;
+    --we-surface: #11211b;
+    --we-surface-muted: #172b23;
 
-    --we-border: #27455a;
-    --we-border-strong: #36576e;
-    --we-border-input: #5a7a91;
+    --we-border: #233a31;
+    --we-border-strong: #2f4b40;
+    --we-border-input: #557567;
 
-    --we-text-primary: #f1f5f9;
-    --we-text-body: #cbd5e1;
-    --we-text-secondary: #94a3b8;
+    --we-text-primary: #ecf5f0;
+    --we-text-body: #c5d3cc;
+    --we-text-secondary: #95a99f;
     --we-link: #4ade80;
 
     --we-focus: #4ade80;
-    --we-focus-on-primary: #4ade80;
+    --we-focus-on-primary: #86efac;
 
     --we-success-soft: #14432a;
     --we-success-text: #86efac;
@@ -173,12 +199,20 @@
 
     --we-rating: #f59e0b; /* 7.3:1 on the dark surface */
 
+    --we-chart-1: #3987e5;
+    --we-chart-2: #d95926;
+    --we-chart-3: #199e70;
+    --we-chart-single: #16a34a;
+    --we-chart-present: #16a34a;
+    --we-chart-leave: #3b82f6;
+    --we-chart-absent: #ef4444;
+    --we-chart-pending: #64748b;
+  --we-device-frame: #050c09;
+  --we-device-base: #4b5a66;
+  --we-device-edge: #2c3740;
+    --we-chart-grid: #1d3329;
 
-    --we-chart-1: #5a93d8;
-    --we-chart-2: #1faf55;
-    --we-chart-3: #9f7aea;
-
-    --we-scrim: rgb(5 12 18 / 65%);
+    --we-scrim: rgb(2 10 7 / 65%);
 
     --we-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 30%);
     --we-shadow-md: 0 2px 6px -1px rgb(0 0 0 / 40%);
@@ -188,32 +222,36 @@
 
 /* The same dark steps, when someone chose dark with the theme toggle. */
 :root[data-theme="dark"] {
-  --we-primary: #27455a;
-  --we-primary-hover: #315770;
-  --we-on-primary: #f1f5f9;
-  --we-on-primary-muted: #aebbcb; /* 5.2:1 on the dark navy */
+  --we-primary: #0b3326;
+  --we-primary-hover: #0f4130;
+  --we-sidebar-top: #0c3a2b;
+  --we-sidebar-bottom: #082a1f;
+  --we-on-primary: #e7f5ee;
+  --we-on-primary-muted: #9ec2b1;
+  --we-nav-active: #15803d;
+  --we-on-nav-active: #ffffff;
 
-  --we-accent: #4ade80;
-  --we-accent-hover: #22c55e;
-  --we-on-accent: #112532;
-  --we-accent-soft: #14432a;
+  --we-accent: #22c55e;
+  --we-accent-hover: #4ade80;
+  --we-on-accent: #052e16;
+  --we-accent-soft: #133d27;
   --we-accent-strong: #86efac;
 
-  --we-background: #0b1620;
-  --we-surface: #112532;
-  --we-surface-muted: #16303f;
+  --we-background: #0a1612;
+  --we-surface: #11211b;
+  --we-surface-muted: #172b23;
 
-  --we-border: #27455a;
-  --we-border-strong: #36576e;
-  --we-border-input: #5a7a91;
+  --we-border: #233a31;
+  --we-border-strong: #2f4b40;
+  --we-border-input: #557567;
 
-  --we-text-primary: #f1f5f9;
-  --we-text-body: #cbd5e1;
-  --we-text-secondary: #94a3b8;
+  --we-text-primary: #ecf5f0;
+  --we-text-body: #c5d3cc;
+  --we-text-secondary: #95a99f;
   --we-link: #4ade80;
 
   --we-focus: #4ade80;
-  --we-focus-on-primary: #4ade80;
+  --we-focus-on-primary: #86efac;
 
   --we-success-soft: #14432a;
   --we-success-text: #86efac;
@@ -228,19 +266,27 @@
 
   --we-rating: #f59e0b; /* 7.3:1 on the dark surface */
 
+  --we-chart-1: #3987e5;
+  --we-chart-2: #d95926;
+  --we-chart-3: #199e70;
+  --we-chart-single: #16a34a;
+  --we-chart-present: #16a34a;
+  --we-chart-leave: #3b82f6;
+  --we-chart-absent: #ef4444;
+  --we-chart-pending: #64748b;
+  --we-device-frame: #050c09;
+  --we-device-base: #4b5a66;
+  --we-device-edge: #2c3740;
+  --we-chart-grid: #1d3329;
 
-  --we-chart-1: #5a93d8;
-  --we-chart-2: #1faf55;
-  --we-chart-3: #9f7aea;
-
-  --we-scrim: rgb(5 12 18 / 65%);
+  --we-scrim: rgb(2 10 7 / 65%);
 
   --we-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 30%);
   --we-shadow-md: 0 2px 6px -1px rgb(0 0 0 / 40%);
   --we-shadow-lg: 0 10px 24px -6px rgb(0 0 0 / 55%);
 }
 
-/* A navy region (sidebar, bulk bar, hero) swaps the text and focus steps so
+/* A green region (sidebar, hero) swaps the text and focus steps so
    anything inside it reads correctly without restating a colour. */
 [data-region="primary"] {
   --we-text-primary: var(--we-on-primary);

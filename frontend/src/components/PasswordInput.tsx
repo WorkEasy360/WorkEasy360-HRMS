@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 
 export function PasswordInput({
@@ -10,7 +10,10 @@ export function PasswordInput({
   autoComplete,
   required,
   placeholder,
+  icon: Icon,
 }: {
+  /** An optional leading icon, as on the sign-in form. */
+  icon?: LucideIcon;
   id: string;
   value: string;
   onChange: (v: string) => void;
@@ -20,7 +23,8 @@ export function PasswordInput({
 }) {
   const [visible, setVisible] = useState(false);
   return (
-    <div className="relative">
+    <div className={`relative ${Icon ? "c-input-group" : ""}`}>
+      {Icon && <Icon strokeWidth={2} aria-hidden />}
       <input
         id={id}
         type={visible ? "text" : "password"}
@@ -30,7 +34,7 @@ export function PasswordInput({
         required={required}
         placeholder={placeholder}
         maxLength={128}
-        className="c-input pr-10"
+        className="c-input w-full pr-10"
       />
       <button
         type="button"

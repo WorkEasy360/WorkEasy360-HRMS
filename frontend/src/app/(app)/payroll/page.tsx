@@ -1,352 +1,190 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { Banknote, CalendarPlus, HandCoins, Play, Receipt, Save } from "lucide-react";
+import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { BadgeCheck, Calculator, CheckCircle2, CreditCard, MinusCircle, Send, Users, Wallet } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
-import { Employee, ExpenseClaim, LoanRequest, PayrollRun, Payslip } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
+import type { CompensationRecord, Employee, PayrollRun, Payslip } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, Card, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
+import { Button, Card, CardBody, CardHeader, EmptyState, ErrorBanner, LoadingRows, PageHeader, StatCard } from "@/ui";
 import { errorMessage, useFeedback } from "@/components/feedback";
-import { formatDateTime, formatMoney } from "@/components/format";
+import { formatCalendarDate, formatMoney, formatMoneyWhole, localIsoDate } from "@/components/format";
 
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+/**
+ * Payroll (04). Salary details, the monthly run and payslips.
+ *
+ * The flow is deliberately review-and-confirm: prepare → review and adjust →
+ * finalize → publish. A finalized payroll never changes silently; a correction
+ * is a new payslip revision that keeps the original.
+ */
+
+type Tab = "salary" | "runs";
+
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 export default function PayrollPage() {
-  const { toast, confirm } = useFeedback();
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [runs, setRuns] = useState<PayrollRun[]>([]);
-  const [expenses, setExpenses] = useState<ExpenseClaim[]>([]);
-  const [loans, setLoans] = useState<LoanRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [payslipsByRun, setPayslipsByRun] = useState<Record<string, Payslip[]>>({});
-  const [processingId, setProcessingId] = useState<string | null>(null);
-  const [viewingId, setViewingId] = useState<string | null>(null);
-  const [reimbursingId, setReimbursingId] = useState<string | null>(null);
+  return (
+    <Suspense fallback={<LoadingRows rows={5} />}>
+      <Payroll />
+    </Suspense>
+  );
+}
 
-  async function load() {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const [emps, r, exp, ln] = await Promise.all([
-        apiFetch<Employee[]>("/employees"),
-        apiFetch<PayrollRun[]>("/payroll"),
-        apiFetch<ExpenseClaim[]>("/expenses"),
-        apiFetch<LoanRequest[]>("/loans"),
-      ]);
-      setEmployees(emps);
-      setRuns(r);
-      setExpenses(exp);
-      setLoans(ln);
-    } catch (err) {
-      setLoadError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function markReimbursed(e: ExpenseClaim) {
-    const who = e.employee ? `${e.employee.firstName} ${e.employee.lastName}` : "the employee";
-    const ok = await confirm({
-      title: "Mark this claim as reimbursed?",
-      description: `${formatMoney(e.amount)} ${e.category.toLowerCase()} claim for ${who}. Only do this once the money has been paid out.`,
-      confirmLabel: "Mark reimbursed",
-      destructive: false,
-    });
-    if (!ok) return;
-    setReimbursingId(e.id);
-    try {
-      await apiFetch(`/expenses/${e.id}/mark-reimbursed`, { method: "POST" });
-      toast.success("Expense marked as reimbursed");
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setReimbursingId(null);
-    }
-  }
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
-    load();
-  }, []);
-
-  async function processRun(run: PayrollRun) {
-    const ok = await confirm({
-      title: `Process payroll for ${MONTH_NAMES[run.month - 1]} ${run.year}?`,
-      description: "Payslips will be generated for all employees with compensation, including loan deductions. This cannot be undone.",
-      confirmLabel: "Process payroll",
-      destructive: false,
-    });
-    if (!ok) return;
-    setProcessingId(run.id);
-    try {
-      const result = await apiFetch<{ payslips: Payslip[] }>(`/payroll/${run.id}/process`, { method: "POST" });
-      setPayslipsByRun((prev) => ({ ...prev, [run.id]: result.payslips }));
-      toast.success(`Payroll processed for ${MONTH_NAMES[run.month - 1]} ${run.year}`);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setProcessingId(null);
-    }
-  }
-
-  async function viewPayslips(id: string) {
-    setViewingId(id);
-    try {
-      const payslips = await apiFetch<Payslip[]>(`/payroll/${id}/payslips`);
-      setPayslipsByRun((prev) => ({ ...prev, [id]: payslips }));
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setViewingId(null);
-    }
-  }
-
-  function hidePayslips(id: string) {
-    setPayslipsByRun((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }
-
-  const draftRuns = runs.filter((r) => r.status === "DRAFT").length;
-  const toReimburse = expenses.filter((e) => e.status === "APPROVED");
-  const activeLoans = loans.filter((l) => l.status === "ACTIVE");
-  const loanOutstanding = activeLoans.reduce((sum, l) => sum + (Number(l.remainingAmount) || 0), 0);
+function Payroll() {
+  const { hasPermission } = useAuth();
+  const params = useSearchParams();
+  const router = useRouter();
+  const canRun = hasPermission("payroll:manage");
+  const canSetSalary = hasPermission("compensation:manage");
+  const requested = params.get("tab") as Tab | null;
+  const tab: Tab = requested === "salary" && canSetSalary ? "salary" : canRun ? "runs" : "salary";
 
   return (
-    <div className="max-w-3xl space-y-8">
-      <PageHeader
-        title="Payroll"
-        description="Set compensation, run monthly payroll and settle expense claims and loans."
-      />
+    <div className="space-y-6">
+      <PageHeader icon={CreditCard} title="Payroll" description="Salary details, the monthly payroll run and payslips." />
 
-      <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />
-
-      {!loading && (
-        <div className="c-stats">
-          <StatCard label="Draft runs" value={String(draftRuns)} valueTone="warning" />
-          <StatCard
-            label="To reimburse"
-            value={formatMoney(toReimburse.reduce((sum, e) => sum + (Number(e.amount) || 0), 0))}
-            hint={`${toReimburse.length} approved claim(s)`}
-            valueTone="info"
-          />
-          <StatCard
-            label="Loans outstanding"
-            value={formatMoney(loanOutstanding)}
-            hint={`${activeLoans.length} active loan(s)`}
-          />
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-6">
-        <CompensationForm
-          employees={employees}
-          onSaved={() => toast.success("Compensation saved")}
-        />
-
-        <NewRunForm
-          onCreated={() => {
-            toast.success("Payroll run created");
-            load();
-          }}
-        />
+      <div className="c-tabs" role="tablist" aria-label="Payroll">
+        {canSetSalary && (
+          <button role="tab" aria-selected={tab === "salary"} onClick={() => router.replace("/payroll?tab=salary", { scroll: false })} className="c-tab">
+            Salary details
+          </button>
+        )}
+        {canRun && (
+          <button role="tab" aria-selected={tab === "runs"} onClick={() => router.replace("/payroll", { scroll: false })} className="c-tab">
+            Monthly payroll
+          </button>
+        )}
       </div>
 
-      <section>
-        <h2 className="mb-2 text-sm font-medium text-secondary">Payroll runs</h2>
-        {loading ? (
-          <LoadingRows rows={3} />
-        ) : runs.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon={Banknote}
-              title="No payroll runs yet"
-              description="Create a run for a month above, then process it to generate payslips for your employees."
-            />
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {runs.map((run) => (
-              <Card key={run.id} className="p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <p className="font-medium text-heading">
-                      {MONTH_NAMES[run.month - 1]} {run.year}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge status={run.status} />
-                      {run.processedAt && (
-                        <span className="text-xs text-secondary">Processed {formatDateTime(run.processedAt)}</span>
-                      )}
-                    </div>
-                  </div>
-                  {run.status === "DRAFT" ? (
-                    <Button size="sm" variant="dark" icon={Play} loading={processingId === run.id} onClick={() => processRun(run)}>
-                      Process
-                    </Button>
-                  ) : payslipsByRun[run.id] ? (
-                    <Button size="sm" variant="ghost" onClick={() => hidePayslips(run.id)}>
-                      Hide payslips
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="secondary" loading={viewingId === run.id} onClick={() => viewPayslips(run.id)}>
-                      View payslips
-                    </Button>
-                  )}
-                </div>
-                {payslipsByRun[run.id] && (
-                  <div className="mt-3">
-                    {payslipsByRun[run.id].length === 0 ? (
-                      <p className="text-sm text-secondary">No payslips were generated for this run.</p>
-                    ) : (
-                      <div className="c-table-wrap shadow-none">
-                        <table className="c-table">
-                          <thead>
-                            <tr>
-                              <th>Employee</th>
-                              <th>Gross</th>
-                              <th>Deductions</th>
-                              <th>Net</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {payslipsByRun[run.id].map((p) => (
-                              <tr key={p.id}>
-                                <td className="font-medium text-heading">
-                                  {p.employee?.firstName} {p.employee?.lastName}
-                                </td>
-                                <td className="whitespace-nowrap text-secondary">{formatMoney(p.grossPay)}</td>
-                                <td className="whitespace-nowrap text-secondary">{formatMoney(p.deductions)}</td>
-                                <td className="whitespace-nowrap font-medium text-heading">{formatMoney(p.netPay)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-sm font-medium text-secondary">Expense claims</h2>
-        {loading ? (
-          <LoadingRows rows={3} />
-        ) : expenses.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon={Receipt}
-              title="No expense claims yet"
-              description="Claims submitted by employees will appear here. Approved claims can be marked as reimbursed once paid."
-            />
-          </Card>
-        ) : (
-          <div className="c-table-wrap">
-            <table className="c-table">
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Category</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                  <th>
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map((e) => (
-                  <tr key={e.id}>
-                    <td className="font-medium text-heading">
-                      {e.employee?.firstName} {e.employee?.lastName}
-                    </td>
-                    <td className="text-secondary">{e.category}</td>
-                    <td className="whitespace-nowrap text-secondary">{formatMoney(e.amount)}</td>
-                    <td>
-                      <StatusBadge status={e.status} />
-                    </td>
-                    <td className="text-right">
-                      {e.status === "APPROVED" && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="whitespace-nowrap"
-                          loading={reimbursingId === e.id}
-                          onClick={() => markReimbursed(e)}
-                        >
-                          Mark reimbursed
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-sm font-medium text-secondary">Loans</h2>
-        {loading ? (
-          <LoadingRows rows={3} />
-        ) : loans.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon={HandCoins}
-              title="No loan requests yet"
-              description="Loan requests from employees will appear here with their repayment progress."
-            />
-          </Card>
-        ) : (
-          <div className="c-table-wrap">
-            <table className="c-table">
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Amount</th>
-                  <th>Remaining</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loans.map((l) => (
-                  <tr key={l.id}>
-                    <td className="font-medium text-heading">
-                      {l.employee?.firstName} {l.employee?.lastName}
-                    </td>
-                    <td className="whitespace-nowrap text-secondary">{formatMoney(l.amount)}</td>
-                    <td className="whitespace-nowrap text-secondary">{formatMoney(l.remainingAmount)}</td>
-                    <td>
-                      <StatusBadge status={l.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      {tab === "salary" ? <SalaryTab /> : <RunsTab />}
     </div>
   );
 }
 
+/* ─── 4.1 Salary details ─────────────────────────────────────────────── */
 
-function CompensationForm({ employees, onSaved }: { employees: Employee[]; onSaved: () => void }) {
+function SalaryTab() {
+  const { toast } = useFeedback();
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeId, setEmployeeId] = useState("");
-  const [effectiveFrom, setEffectiveFrom] = useState("");
+  const [history, setHistory] = useState<CompensationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<Employee[]>("/employees")
+      .then(setEmployees)
+      .catch((err) => setError(errorMessage(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const loadHistory = useCallback(async (id: string) => {
+    if (!id) {
+      setHistory([]);
+      return;
+    }
+    try {
+      setHistory(await apiFetch<CompensationRecord[]>(`/compensation/${id}`));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reloads when the employee changes
+    loadHistory(employeeId);
+  }, [employeeId, loadHistory]);
+
+  if (loading) return <LoadingRows rows={4} />;
+
+  return (
+    <div className="space-y-6">
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
+
+      <Card>
+        <CardHeader title="Employee earnings" />
+        <CardBody className="space-y-4">
+          <div className="max-w-sm">
+            <label htmlFor="sal-employee" className="c-label">
+              Employee
+            </label>
+            <select id="sal-employee" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="c-select">
+              <option value="">Choose an employee</option>
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.firstName} {e.lastName} ({e.employeeCode})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {employeeId && (
+            <CompensationForm
+              employeeId={employeeId}
+              onSaved={() => {
+                toast.success("Salary recorded");
+                loadHistory(employeeId);
+              }}
+            />
+          )}
+        </CardBody>
+      </Card>
+
+      {employeeId && (
+        <Card>
+          <CardHeader title="Salary history" />
+          {history.length === 0 ? (
+            <EmptyState icon={Wallet} title="No salary on file" description="Record one so this employee can be paid." />
+          ) : (
+            <div className="c-table-wrap">
+              <table className="c-table">
+                <caption className="sr-only">Salary history</caption>
+                <thead>
+                  <tr>
+                    <th>Effective from</th>
+                    <th>Annual CTC</th>
+                    <th>Monthly gross</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((c) => (
+                    <tr key={c.id}>
+                      <td className="whitespace-nowrap font-medium text-heading">{formatCalendarDate(c.effectiveFrom)}</td>
+                      <td className="text-secondary">{formatMoney(c.annualCTC, c.currency)}</td>
+                      <td className="text-secondary">{formatMoney(c.monthlyGross, c.currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <CardBody>
+            <p className="text-xs text-secondary">
+              Payroll uses the record in force on each day of the period, so a mid-month change is prorated automatically.
+            </p>
+          </CardBody>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function CompensationForm({ employeeId, onSaved }: { employeeId: string; onSaved: () => void }) {
+  const [effectiveFrom, setEffectiveFrom] = useState(localIsoDate());
   const [annualCTC, setAnnualCTC] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -370,94 +208,336 @@ function CompensationForm({ employees, onSaved }: { employees: Employee[]; onSav
   }
 
   return (
-    <Card className="p-4">
-      <h2 className="mb-3 text-sm font-medium text-heading">Set compensation</h2>
-      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label htmlFor="comp-employee" className="c-label">
-            Employee
-          </label>
-          <select id="comp-employee" required value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="c-select">
-            <option value="">Select an employee…</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.firstName} {emp.lastName}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="comp-effective" className="c-label">
-            Effective from
-          </label>
-          <input
-            id="comp-effective"
-            required
-            type="date"
-            value={effectiveFrom}
-            onChange={(e) => setEffectiveFrom(e.target.value)}
-            className="c-input"
-          />
-        </div>
-        <div>
-          <label htmlFor="comp-ctc" className="c-label">
-            Annual CTC (₹)
-          </label>
-          <input
-            id="comp-ctc"
-            required
-            type="number"
-            min="1"
-            value={annualCTC}
-            onChange={(e) => setAnnualCTC(e.target.value)}
-            className="c-input"
-          />
-          {Number(annualCTC) > 0 && (
-            <p className="mt-1 text-xs text-secondary">≈ {formatMoney(Math.round(Number(annualCTC) / 12))} per month</p>
-          )}
-        </div>
-        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
-        <div className="sm:col-span-2">
-          <Button type="submit" icon={Save} loading={submitting}>
-            Save compensation
-          </Button>
-        </div>
-      </form>
-    </Card>
+    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div>
+        <label htmlFor="comp-from" className="c-label">
+          Effective from
+        </label>
+        <input id="comp-from" required type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} className="c-input" />
+      </div>
+      <div>
+        <label htmlFor="comp-ctc" className="c-label">
+          Annual CTC
+        </label>
+        <input
+          id="comp-ctc"
+          required
+          type="number"
+          min={0}
+          step={1000}
+          value={annualCTC}
+          onChange={(e) => setAnnualCTC(e.target.value)}
+          className="c-input"
+        />
+      </div>
+      <div className="flex items-end">
+        <Button type="submit" loading={submitting} disabled={!annualCTC}>
+          Save salary
+        </Button>
+      </div>
+      {error && <p className="text-sm text-danger-text sm:col-span-3">{error}</p>}
+    </form>
   );
 }
 
-function NewRunForm({ onCreated }: { onCreated: () => void }) {
-  const now = new Date();
-  const [month, setMonth] = useState(String(now.getMonth() + 1));
-  const [year, setYear] = useState(String(now.getFullYear()));
+/* ─── 4.2 / 4.3 Monthly payroll and payslips ─────────────────────────── */
+
+function RunsTab() {
+  const { toast, confirm } = useFeedback();
+  const [runs, setRuns] = useState<PayrollRun[]>([]);
+  const [selected, setSelected] = useState<PayrollRun | null>(null);
+  const [payslips, setPayslips] = useState<Payslip[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [revising, setRevising] = useState<Payslip | null>(null);
+
+  const loadRuns = useCallback(async () => {
+    setError(null);
+    try {
+      const data = await apiFetch<PayrollRun[]>("/payroll");
+      setRuns(data);
+      setSelected((prev) => (prev ? (data.find((r) => r.id === prev.id) ?? null) : (data[0] ?? null)));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadPayslips = useCallback(async (runId: string) => {
+    try {
+      setPayslips(await apiFetch<Payslip[]>(`/payroll/${runId}/payslips`));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
+    loadRuns();
+  }, [loadRuns]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reloads when the run changes
+    if (selected) loadPayslips(selected.id);
+    else setPayslips([]);
+  }, [selected, loadPayslips]);
+
+  async function act(path: string, success: string, ask?: { title: string; description: string }) {
+    if (ask) {
+      const ok = await confirm({ ...ask, confirmLabel: "Continue", destructive: false });
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      await apiFetch(path, { method: "POST" });
+      toast.success(success);
+      await loadRuns();
+      if (selected) await loadPayslips(selected.id);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) return <LoadingRows rows={5} />;
+
+  const current = payslips.filter((p) => !p.supersededAt);
+  const totals = current.reduce(
+    (acc, p) => ({ gross: acc.gross + p.grossPay, deductions: acc.deductions + p.deductions, net: acc.net + p.netPay }),
+    { gross: 0, deductions: 0, net: 0 },
+  );
+  const unpublished = current.filter((p) => !p.publishedAt).length;
+
+  return (
+    <div className="space-y-6">
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
+
+      <NewRunForm
+        existing={runs}
+        onCreated={async (run) => {
+          toast.success("Payroll period created");
+          await loadRuns();
+          setSelected(run);
+        }}
+      />
+
+      {runs.length === 0 ? (
+        <Card>
+          <EmptyState icon={CreditCard} title="No payroll periods yet" description="Create one for the month you want to pay." />
+        </Card>
+      ) : (
+        <>
+          <div className="max-w-sm">
+            <label htmlFor="run-select" className="c-label">
+              Period
+            </label>
+            <select
+              id="run-select"
+              value={selected?.id ?? ""}
+              onChange={(e) => setSelected(runs.find((r) => r.id === e.target.value) ?? null)}
+              className="c-select"
+            >
+              {runs.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {MONTHS[r.month - 1]} {r.year} — {r.status === "FINALIZED" ? "finalized" : "draft"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selected && (
+            <>
+              <div className="c-stats" data-dense="true">
+                <StatCard icon={Users} label="Employees" value={current.length} />
+                <StatCard icon={Wallet} iconTone="info" label="Gross" value={formatMoneyWhole(totals.gross)} />
+                <StatCard icon={MinusCircle} iconTone="warning" label="Deductions" value={formatMoneyWhole(totals.deductions)} />
+                <StatCard icon={CreditCard} iconTone="ai" label="Net" value={formatMoneyWhole(totals.net)} />
+                <StatCard icon={BadgeCheck} label="Status" value={<StatusBadge status={selected.status} />} />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {selected.status === "DRAFT" && (
+                  <>
+                    <Button
+                      icon={Calculator}
+                      loading={busy}
+                      onClick={() =>
+                        act(`/payroll/${selected.id}/prepare`, "Payroll prepared", {
+                          title: "Prepare this payroll?",
+                          description:
+                            "Recalculates every eligible employee from their salary records, joining and exit dates, the work schedule and approved unpaid leave. Any adjustments you made to this draft are replaced.",
+                        })
+                      }
+                    >
+                      Prepare / recalculate
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      icon={CheckCircle2}
+                      loading={busy}
+                      disabled={current.length === 0}
+                      onClick={() =>
+                        act(`/payroll/${selected.id}/finalize`, "Payroll finalized", {
+                          title: "Finalize this payroll?",
+                          description:
+                            "After this, amounts can only be corrected through a payslip revision that keeps the original on record.",
+                        })
+                      }
+                    >
+                      Finalize
+                    </Button>
+                  </>
+                )}
+                {selected.status === "FINALIZED" && unpublished > 0 && (
+                  <Button
+                    icon={Send}
+                    loading={busy}
+                    onClick={() =>
+                      act(`/payroll/${selected.id}/publish`, "Payslips published", {
+                        title: "Publish payslips?",
+                        description:
+                          "Employees will be able to read their payslip and will be emailed. Publishing does not mean the salary has been paid.",
+                      })
+                    }
+                  >
+                    Publish {unpublished} payslip{unpublished === 1 ? "" : "s"}
+                  </Button>
+                )}
+              </div>
+
+              {selected.status === "FINALIZED" && (
+                <p className="c-alert" data-tone="info">
+                  This payroll is finalized. Corrections create a new payslip revision that references the original.
+                </p>
+              )}
+
+              {payslips.length === 0 ? (
+                <Card>
+                  <EmptyState
+                    icon={Calculator}
+                    title="Nothing prepared yet"
+                    description="Prepare the payroll to work out each eligible employee's pay for this period."
+                  />
+                </Card>
+              ) : (
+                <div className="c-table-wrap">
+                  <table className="c-table">
+                    <caption className="sr-only">Payslips for this period</caption>
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th>Paid days</th>
+                        <th>Gross</th>
+                        <th>Deductions</th>
+                        <th>Net</th>
+                        <th>Published</th>
+                        <th>
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payslips.map((p) => (
+                        <tr key={p.id} className={p.supersededAt ? "opacity-60" : ""}>
+                          <td className="font-medium text-heading">
+                            {p.employee ? `${p.employee.firstName} ${p.employee.lastName}` : "—"}
+                            {p.revisionNumber > 1 && (
+                              <span className="ml-2 c-badge" data-tone="info">
+                                Rev {p.revisionNumber}
+                              </span>
+                            )}
+                            {p.supersededAt && <span className="ml-2 c-tag">superseded</span>}
+                          </td>
+                          <td className="text-secondary">
+                            {p.paidDays} of {p.payableDays}
+                          </td>
+                          <td className="text-secondary">{formatMoney(p.grossPay)}</td>
+                          <td className="text-secondary">{formatMoney(p.deductions)}</td>
+                          <td className="font-medium text-heading">{formatMoney(p.netPay)}</td>
+                          <td className="text-secondary">{p.publishedAt ? formatCalendarDate(p.publishedAt) : "—"}</td>
+                          <td className="text-right">
+                            {!p.supersededAt && selected.status === "DRAFT" && (
+                              <AdjustButton
+                                payslip={p}
+                                runId={selected.id}
+                                onSaved={() => {
+                                  toast.success("Adjustment recorded");
+                                  loadPayslips(selected.id);
+                                }}
+                              />
+                            )}
+                            {!p.supersededAt && selected.status === "FINALIZED" && (
+                              <Button variant="ghost" size="sm" onClick={() => setRevising(p)}>
+                                Revise
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <p className="text-xs text-secondary">
+                No statutory deduction is applied automatically. Only explicitly approved deductions, recorded as adjustments
+                during review, appear on a payslip.
+              </p>
+            </>
+          )}
+        </>
+      )}
+
+      {revising && selected && (
+        <ReviseDialog
+          payslip={revising}
+          runId={selected.id}
+          onClose={() => setRevising(null)}
+          onSaved={() => {
+            setRevising(null);
+            toast.success("Revision recorded");
+            loadPayslips(selected.id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function NewRunForm({ existing, onCreated }: { existing: PayrollRun[]; onCreated: (run: PayrollRun) => void }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const duplicate = existing.some((r) => r.month === month && r.year === year);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setSubmitting(true);
+    setBusy(true);
     try {
-      await apiFetch("/payroll", { method: "POST", body: JSON.stringify({ month: Number(month), year: Number(year) }) });
-      onCreated();
+      onCreated(await apiFetch<PayrollRun>("/payroll", { method: "POST", body: JSON.stringify({ month, year }) }));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   }
 
   return (
     <Card className="p-4">
-      <h2 className="mb-3 text-sm font-medium text-heading">Start a payroll run</h2>
-      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
         <div>
           <label htmlFor="run-month" className="c-label">
             Month
           </label>
-          <select id="run-month" value={month} onChange={(e) => setMonth(e.target.value)} className="c-select">
-            {MONTH_NAMES.map((m, i) => (
+          <select id="run-month" value={month} onChange={(e) => setMonth(Number(e.target.value))} className="c-select">
+            {MONTHS.map((m, i) => (
               <option key={m} value={i + 1}>
                 {m}
               </option>
@@ -468,15 +548,170 @@ function NewRunForm({ onCreated }: { onCreated: () => void }) {
           <label htmlFor="run-year" className="c-label">
             Year
           </label>
-          <input id="run-year" required type="number" value={year} onChange={(e) => setYear(e.target.value)} className="c-input" />
+          <input
+            id="run-year"
+            type="number"
+            min={2000}
+            max={2100}
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            className="c-input w-28"
+          />
         </div>
-        {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
-        <div className="sm:col-span-2">
-          <Button type="submit" icon={CalendarPlus} loading={submitting}>
-            Create run
-          </Button>
-        </div>
+        <Button type="submit" loading={busy} disabled={duplicate}>
+          {duplicate ? "Period already exists" : "Create period"}
+        </Button>
+        {error && <p className="w-full text-sm text-danger-text">{error}</p>}
       </form>
     </Card>
+  );
+}
+
+/** An authorized adjustment during review (4.2.2). Draft only. */
+function AdjustButton({ payslip, runId, onSaved }: { payslip: Payslip; runId: string; onSaved: () => void }) {
+  const { toast } = useFeedback();
+  const [open, setOpen] = useState(false);
+  const [deductions, setDeductions] = useState(String(payslip.deductions));
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await apiFetch(`/payroll/${runId}/payslips/${payslip.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ deductions: Number(deductions), ...(note ? { note } : {}) }),
+      });
+      setOpen(false);
+      onSaved();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+        Adjust
+      </Button>
+    );
+  }
+
+  return (
+    <form onSubmit={save} className="flex items-end justify-end gap-2">
+      <div>
+        <label htmlFor={`adj-${payslip.id}`} className="sr-only">
+          Deductions
+        </label>
+        <input
+          id={`adj-${payslip.id}`}
+          type="number"
+          min={0}
+          step={1}
+          value={deductions}
+          onChange={(e) => setDeductions(e.target.value)}
+          className="c-input w-28"
+        />
+      </div>
+      <div>
+        <label htmlFor={`adjn-${payslip.id}`} className="sr-only">
+          Note
+        </label>
+        <input
+          id={`adjn-${payslip.id}`}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Reason"
+          className="c-input w-36"
+        />
+      </div>
+      <Button type="submit" size="sm" loading={busy}>
+        Save
+      </Button>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+        Cancel
+      </Button>
+    </form>
+  );
+}
+
+/** A controlled revision of a finalized payslip (rule 02). */
+function ReviseDialog({
+  payslip,
+  runId,
+  onClose,
+  onSaved,
+}: {
+  payslip: Payslip;
+  runId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [grossPay, setGrossPay] = useState(String(payslip.grossPay));
+  const [deductions, setDeductions] = useState(String(payslip.deductions));
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await apiFetch(`/payroll/${runId}/payslips/${payslip.id}/revise`, {
+        method: "POST",
+        body: JSON.stringify({ grossPay: Number(grossPay), deductions: Number(deductions), reason }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="c-dialog z-50" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label="Revise payslip" className="c-dialog-panel" onClick={(e) => e.stopPropagation()}>
+        <h2 className="c-dialog-title">
+          Revise payslip · {payslip.employee ? `${payslip.employee.firstName} ${payslip.employee.lastName}` : ""}
+        </h2>
+        <p className="mt-1 text-sm text-secondary">
+          The original payslip is kept and marked superseded. The new revision references it.
+        </p>
+        <form onSubmit={submit} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="rev-gross" className="c-label">
+              Gross pay
+            </label>
+            <input id="rev-gross" required type="number" min={0} step={1} value={grossPay} onChange={(e) => setGrossPay(e.target.value)} className="c-input" />
+          </div>
+          <div>
+            <label htmlFor="rev-ded" className="c-label">
+              Deductions
+            </label>
+            <input id="rev-ded" required type="number" min={0} step={1} value={deductions} onChange={(e) => setDeductions(e.target.value)} className="c-input" />
+          </div>
+          <div className="sm:col-span-2">
+            <label htmlFor="rev-reason" className="c-label">
+              Reason for the revision
+            </label>
+            <input id="rev-reason" required minLength={3} value={reason} onChange={(e) => setReason(e.target.value)} className="c-input" />
+          </div>
+          {error && <p className="text-sm text-danger-text sm:col-span-2">{error}</p>}
+          <div className="flex gap-2 sm:col-span-2">
+            <Button type="submit" loading={busy}>
+              Create revision
+            </Button>
+            <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

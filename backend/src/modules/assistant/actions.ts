@@ -1,14 +1,14 @@
 import { prisma } from "../../config/prisma";
 import { AssistantContext } from "../../ai/capabilities";
+import { resolveApprovalRoute, type ApprovalPermissions } from "../../utils/approvals";
 import { PERMISSIONS, PermissionKey } from "../../utils/permissions";
+import { countWorkingDays, getWorkSchedule, todayInOrgTimezone } from "../../utils/workSchedule";
 import { createSchema as leaveCreateSchema } from "../leaveRequests/leaveRequests.routes";
+import { correctionSchema } from "../attendance/attendance.routes";
 import { createSchema as ticketCreateSchema } from "../helpdesk/helpdesk.routes";
-import { updateSchema as goalUpdateSchema } from "../goals/goals.routes";
-import { upsertSchema as timesheetSchema } from "../timesheets/timesheets.routes";
-import { createSchema as expenseCreateSchema } from "../expenses/expenses.routes";
 import { createSchema as announcementCreateSchema } from "../announcements/announcements.routes";
 import { createSchema as employeeCreateSchema } from "../employees/employees.routes";
-import { createPostingSchema, updateCandidateSchema } from "../recruitment/recruitment.routes";
+import { createPostingSchema, updateApplicationSchema } from "../recruitment/recruitment.routes";
 
 /**
  * Turning a model's suggestion into a card the member can confirm.
@@ -17,6 +17,9 @@ import { createPostingSchema, updateCandidateSchema } from "../recruitment/recru
  * and the same rules as the endpoint that will eventually run it, so the card
  * never offers something the server would refuse — and if the world changes
  * between the card and the button, the endpoint refuses it anyway.
+ *
+ * The assistant can never approve its own proposal, finalize payroll, change
+ * salary or export a private file: those actions simply do not exist here.
  */
 
 export interface Proposal {
@@ -55,6 +58,12 @@ function date(value: unknown): string | undefined {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
 }
 
+function datetime(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
 function bool(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
   if (value === "true") return true;
@@ -62,28 +71,19 @@ function bool(value: unknown): boolean | undefined {
   return undefined;
 }
 
-function num(value: unknown): number | undefined {
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : undefined;
-}
-
 export const ACTION_KINDS = [
   "apply_leave",
   "cancel_leave",
   "check_in",
   "check_out",
+  "request_attendance_correction",
   "raise_ticket",
-  "log_timesheet",
-  "submit_expense",
-  "update_goal_progress",
   "complete_onboarding_task",
   "decide_leave",
-  "decide_timesheet",
-  "decide_expense",
-  "decide_loan",
+  "decide_correction",
   "publish_announcement",
   "create_job_posting",
-  "move_candidate",
+  "move_application",
   "create_employee",
 ] as const;
 
@@ -108,29 +108,32 @@ export function parseAction(raw: unknown): ParsedAction | null {
 
 /* -------------------------------------------------------- shared checks */
 
-const money = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const fullName = (e: { firstName: string; lastName: string }) => `${e.firstName} ${e.lastName}`;
 
+const LEAVE_PERMISSIONS: ApprovalPermissions = {
+  approve: PERMISSIONS.LEAVE_APPROVE,
+  manage: PERMISSIONS.LEAVE_MANAGE,
+};
+const CORRECTION_PERMISSIONS: ApprovalPermissions = {
+  approve: PERMISSIONS.ATTENDANCE_APPROVE,
+  manage: PERMISSIONS.ATTENDANCE_MANAGE,
+};
+
 /**
- * Mirrors assertCanDecide: nobody decides their own record; a holder of the
- * manage permission decides anything else; otherwise only the owner's direct
- * manager, and only while that manager is still active.
+ * Mirrors the routing the endpoint will apply: the assigned manager holding the
+ * approval permission, or authorized HR as fallback, and never the requester
+ * themselves. Returns a refusal message, or null when the member may decide.
  */
 async function canDecide(
   ctx: AssistantContext,
-  owner: { employeeId: string; managerId: string | null },
-  managePermission: PermissionKey,
+  requesterEmployeeId: string,
+  permissions: ApprovalPermissions,
 ): Promise<string | null> {
-  if (ctx.employeeId && owner.employeeId === ctx.employeeId) return "You can't approve your own request.";
-  if (ctx.permissions.includes(managePermission)) return null;
-  if (ctx.employeeId && owner.managerId === ctx.employeeId) {
-    const me = await prisma.employee.findFirst({
-      where: { id: ctx.employeeId, organizationId: ctx.organizationId },
-      select: { status: true },
-    });
-    if (me && me.status !== "EXITED") return null;
-  }
-  return "That request isn't waiting on you to decide.";
+  if (!ctx.employeeId) return "You don't have an employee profile, so you can't decide requests.";
+  if (requesterEmployeeId === ctx.employeeId) return "You can't approve your own request.";
+  const route = await resolveApprovalRoute(ctx.organizationId, requesterEmployeeId, permissions);
+  if (route.approverIds.includes(ctx.employeeId)) return null;
+  return route.routingNote ?? "That request isn't waiting on you to decide.";
 }
 
 function needsEmployee(ctx: AssistantContext): string | null {
@@ -142,9 +145,12 @@ function needsPermission(ctx: AssistantContext, permission: PermissionKey, what:
 }
 
 /** Runs the endpoint's own schema; its message becomes the refusal. */
-function check<T>(schema: { safeParse(v: unknown): { success: true; data: T } | { success: false; error: { issues: { message: string }[] } } }, value: unknown):
-  | { ok: true; data: T }
-  | { ok: false; reason: string } {
+function check<T>(
+  schema: {
+    safeParse(v: unknown): { success: true; data: T } | { success: false; error: { issues: { message: string }[] } };
+  },
+  value: unknown,
+): { ok: true; data: T } | { ok: false; reason: string } {
   const parsed = schema.safeParse(value);
   if (parsed.success) return { ok: true, data: parsed.data };
   return { ok: false, reason: parsed.error.issues[0]?.message ?? "Those details aren't valid." };
@@ -170,8 +176,15 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
       });
       if (!parsed.ok) return refuse(parsed.reason);
 
-      const leaveType = await prisma.leaveType.findFirst({ where: { id: parsed.data.leaveTypeId, organizationId: org } });
+      const [leaveType, schedule] = await Promise.all([
+        prisma.leaveType.findFirst({ where: { id: parsed.data.leaveTypeId, organizationId: org } }),
+        getWorkSchedule(org, { from: parsed.data.startDate, to: parsed.data.endDate }),
+      ]);
       if (!leaveType) return refuse("I couldn't find that leave type in this company.");
+
+      // Working days only, exactly as the endpoint counts them.
+      const days = countWorkingDays(parsed.data.startDate, parsed.data.endDate, schedule);
+      if (days === 0) return refuse("That range has no working days in this company's schedule.");
 
       const overlapping = await prisma.leaveRequest.findFirst({
         where: {
@@ -184,13 +197,23 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
       });
       if (overlapping) return refuse("You already have leave booked in that period.");
 
-      const days = Math.round((parsed.data.endDate.getTime() - parsed.data.startDate.getTime()) / 86_400_000) + 1;
       const balance = await prisma.leaveBalance.findUnique({
-        where: { employeeId_leaveTypeId_year: { employeeId: ctx.employeeId!, leaveTypeId: leaveType.id, year: parsed.data.startDate.getFullYear() } },
+        where: {
+          employeeId_leaveTypeId_year: {
+            employeeId: ctx.employeeId!,
+            leaveTypeId: leaveType.id,
+            year: parsed.data.startDate.getFullYear(),
+          },
+        },
       });
       if (balance && leaveType.defaultDaysPerYear > 0 && balance.allocatedDays - balance.usedDays < days) {
-        return refuse(`You only have ${balance.allocatedDays - balance.usedDays} day(s) of ${leaveType.name} left, and this needs ${days}.`);
+        return refuse(
+          `You only have ${balance.allocatedDays - balance.usedDays} day(s) of ${leaveType.name} left, and this needs ${days}.`,
+        );
       }
+
+      // Say where it will land, including when nothing is configured yet.
+      const route = await resolveApprovalRoute(org, ctx.employeeId!, LEAVE_PERMISSIONS);
 
       return {
         ok: true,
@@ -201,10 +224,13 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
             ["Leave type", leaveType.name],
             ["From", date(args.startDate)!],
             ["To", date(args.endDate)!],
-            ["Days", String(days)],
+            ["Working days", String(days)],
+            ...(leaveType.paid ? [] : ([["Paid", "No — unpaid leave reduces paid days in payroll"]] as [string, string][])),
             ...(parsed.data.reason ? ([["Reason", parsed.data.reason]] as [string, string][]) : []),
           ],
-          effect: "Sends the request to your manager for approval.",
+          effect: route.routingNote
+            ? "Records the request. It stays pending until an approver is configured."
+            : "Sends the request to your approver for a decision.",
           confirmLabel: "Send request",
           danger: false,
           request: {
@@ -217,7 +243,7 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
               ...(parsed.data.reason ? { reason: parsed.data.reason } : {}),
             },
           },
-          done: { label: "My Leave", path: "/my-leave" },
+          done: { label: "Attendance & Leave", path: "/attendance?tab=leave" },
         },
       };
     }
@@ -233,8 +259,14 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
         include: { leaveType: true },
       });
       if (!request) return refuse("I couldn't find that leave request among yours.");
-      if (request.status !== "PENDING") return refuse("Only a pending request can be cancelled.");
+      if (request.status !== "PENDING" && request.status !== "APPROVED") {
+        return refuse("Only a pending or approved request can be cancelled.");
+      }
+      if (request.status === "APPROVED" && request.endDate < new Date()) {
+        return refuse("That leave has already been taken, so it can't be cancelled. Ask HR for a correction.");
+      }
 
+      const wasApproved = request.status === "APPROVED";
       return {
         ok: true,
         proposal: {
@@ -245,12 +277,15 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
             ["From", request.startDate.toISOString().slice(0, 10)],
             ["To", request.endDate.toISOString().slice(0, 10)],
             ["Days", String(request.days)],
+            ["Status", request.status],
           ],
-          effect: "Withdraws the request so nobody needs to decide it.",
+          effect: wasApproved
+            ? "Cancels the approved leave and gives the days back to your balance."
+            : "Withdraws the request so nobody needs to decide it.",
           confirmLabel: "Cancel request",
           danger: true,
           request: { method: "POST", path: `/leave-requests/${request.id}/cancel`, body: {} },
-          done: { label: "My Leave", path: "/my-leave" },
+          done: { label: "Attendance & Leave", path: "/attendance?tab=leave" },
         },
       };
     }
@@ -259,9 +294,13 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
     case "check_out": {
       const blocked = needsEmployee(ctx);
       if (blocked) return refuse(blocked);
-      const todayUtc = new Date();
-      const day = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), todayUtc.getUTCDate()));
-      const record = await prisma.attendanceRecord.findFirst({ where: { organizationId: org, employeeId: ctx.employeeId!, date: day } });
+
+      // The working day is the organization's calendar day, not the server's.
+      const schedule = await getWorkSchedule(org);
+      const day = todayInOrgTimezone(schedule);
+      const record = await prisma.attendanceRecord.findFirst({
+        where: { organizationId: org, employeeId: ctx.employeeId!, date: day },
+      });
 
       if (kind === "check_in" && record?.checkInAt) return refuse("You're already checked in for today.");
       if (kind === "check_out") {
@@ -276,13 +315,74 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
           title: kind === "check_in" ? "Check in for today" : "Check out for today",
           summary: [
             ["Date", ctx.today],
-            ...(kind === "check_out" && record?.checkInAt ? ([["Checked in at", record.checkInAt.toISOString()]] as [string, string][]) : []),
+            ...(kind === "check_out" && record?.checkInAt
+              ? ([["Checked in at", record.checkInAt.toISOString()]] as [string, string][])
+              : []),
           ],
           effect: kind === "check_in" ? "Records your start time for today." : "Records your end time for today.",
           confirmLabel: kind === "check_in" ? "Check in" : "Check out",
           danger: false,
           request: { method: "POST", path: `/attendance/${kind === "check_in" ? "check-in" : "check-out"}`, body: {} },
-          done: { label: "My Attendance", path: "/my-attendance" },
+          done: { label: "Attendance & Leave", path: "/attendance" },
+        },
+      };
+    }
+
+    case "request_attendance_correction": {
+      const blocked = needsEmployee(ctx);
+      if (blocked) return refuse(blocked);
+
+      const parsed = check(correctionSchema, {
+        date: date(args.date),
+        requestedCheckInAt: datetime(args.requestedCheckInAt),
+        requestedCheckOutAt: datetime(args.requestedCheckOutAt),
+        reason: str(args.reason, 5000),
+      });
+      if (!parsed.ok) return refuse(parsed.reason);
+
+      const schedule = await getWorkSchedule(org);
+      if (parsed.data.date > todayInOrgTimezone(schedule)) {
+        return refuse("You can only correct a day that has already happened.");
+      }
+
+      const pending = await prisma.attendanceCorrectionRequest.findFirst({
+        where: { employeeId: ctx.employeeId!, date: parsed.data.date, status: "PENDING" },
+        select: { id: true },
+      });
+      if (pending) return refuse("You already have a pending correction for that day.");
+
+      const route = await resolveApprovalRoute(org, ctx.employeeId!, CORRECTION_PERMISSIONS);
+      return {
+        ok: true,
+        proposal: {
+          kind,
+          title: `Correct attendance for ${date(args.date)}`,
+          summary: [
+            ["Date", date(args.date)!],
+            ...(parsed.data.requestedCheckInAt
+              ? ([["Check in", parsed.data.requestedCheckInAt.toISOString()]] as [string, string][])
+              : []),
+            ...(parsed.data.requestedCheckOutAt
+              ? ([["Check out", parsed.data.requestedCheckOutAt.toISOString()]] as [string, string][])
+              : []),
+            ["Reason", parsed.data.reason],
+          ],
+          effect: route.routingNote
+            ? "Records the request. It stays pending until an approver is configured."
+            : "Sends the correction to your approver. The day only changes once they approve it.",
+          confirmLabel: "Send request",
+          danger: false,
+          request: {
+            method: "POST",
+            path: "/attendance/corrections",
+            body: {
+              date: date(args.date),
+              ...(parsed.data.requestedCheckInAt ? { requestedCheckInAt: datetime(args.requestedCheckInAt) } : {}),
+              ...(parsed.data.requestedCheckOutAt ? { requestedCheckOutAt: datetime(args.requestedCheckOutAt) } : {}),
+              reason: parsed.data.reason,
+            },
+          },
+          done: { label: "Attendance & Leave", path: "/attendance?tab=corrections" },
         },
       };
     }
@@ -290,8 +390,21 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
     case "raise_ticket": {
       const blocked = needsEmployee(ctx);
       if (blocked) return refuse(blocked);
-      const parsed = check(ticketCreateSchema, { category: args.category, subject: args.subject, description: args.description });
+      const parsed = check(ticketCreateSchema, {
+        type: args.type,
+        aboutPayroll: bool(args.aboutPayroll),
+        subject: args.subject,
+        description: args.description,
+      });
       if (!parsed.ok) return refuse(parsed.reason);
+
+      // Routing 01 and 02, shown so the member knows who will read it.
+      const queue =
+        parsed.data.type === "PRODUCT_PROBLEM"
+          ? "WorkEasy360 product support"
+          : parsed.data.aboutPayroll
+            ? "your employer's payroll team"
+            : "your employer's HR team";
 
       return {
         ok: true,
@@ -299,118 +412,25 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
           kind,
           title: "Raise a help desk ticket",
           summary: [
-            ["Category", parsed.data.category],
+            ["Type", parsed.data.type === "PRODUCT_PROBLEM" ? "Product problem" : "HR question"],
+            ["Goes to", queue],
             ["Subject", parsed.data.subject],
             ["Details", parsed.data.description.slice(0, 300)],
           ],
-          effect: "Opens a ticket for the HR help desk to pick up.",
+          effect: `Opens a ticket for ${queue} to pick up, and shows you its ticket number.`,
           confirmLabel: "Raise ticket",
-          danger: false,
-          request: { method: "POST", path: "/helpdesk", body: parsed.data },
-          done: { label: "Help Desk", path: "/helpdesk" },
-        },
-      };
-    }
-
-    case "log_timesheet": {
-      const blocked = needsEmployee(ctx);
-      if (blocked) return refuse(blocked);
-      const parsed = check(timesheetSchema, { date: date(args.date), hours: num(args.hours), task: str(args.task, 5000) });
-      if (!parsed.ok) return refuse(parsed.reason);
-
-      const existing = await prisma.timesheetEntry.findUnique({
-        where: { employeeId_date: { employeeId: ctx.employeeId!, date: parsed.data.date } },
-        select: { status: true, hours: true },
-      });
-      if (existing && existing.status !== "PENDING") return refuse(`That day's timesheet is already ${existing.status.toLowerCase()}.`);
-
-      return {
-        ok: true,
-        proposal: {
-          kind,
-          title: `Log ${parsed.data.hours} hour${parsed.data.hours === 1 ? "" : "s"} on ${date(args.date)}`,
-          summary: [
-            ["Date", date(args.date)!],
-            ["Hours", String(parsed.data.hours)],
-            ...(parsed.data.task ? ([["Task", parsed.data.task]] as [string, string][]) : []),
-            ...(existing ? ([["Replaces", `${existing.hours} hour(s) already logged`]] as [string, string][]) : []),
-          ],
-          effect: "Saves the entry and sends it to your manager for approval.",
-          confirmLabel: "Log hours",
-          danger: false,
-          request: { method: "POST", path: "/timesheets", body: { date: date(args.date), hours: parsed.data.hours, ...(parsed.data.task ? { task: parsed.data.task } : {}) } },
-          done: { label: "My Timesheet", path: "/my-timesheet" },
-        },
-      };
-    }
-
-    case "submit_expense": {
-      const blocked = needsEmployee(ctx);
-      if (blocked) return refuse(blocked);
-      const parsed = check(expenseCreateSchema, {
-        category: args.category,
-        amount: num(args.amount),
-        expenseDate: date(args.expenseDate),
-        description: str(args.description, 5000),
-      });
-      if (!parsed.ok) return refuse(parsed.reason);
-
-      return {
-        ok: true,
-        proposal: {
-          kind,
-          title: `Claim ${money(parsed.data.amount)}`,
-          summary: [
-            ["Category", parsed.data.category],
-            ["Amount", money(parsed.data.amount)],
-            ["Date", date(args.expenseDate)!],
-            ...(parsed.data.description ? ([["Details", parsed.data.description]] as [string, string][]) : []),
-          ],
-          effect: "Submits the claim for approval before reimbursement.",
-          confirmLabel: "Submit claim",
           danger: false,
           request: {
             method: "POST",
-            path: "/expenses",
+            path: "/helpdesk",
             body: {
-              category: parsed.data.category,
-              amount: parsed.data.amount,
-              expenseDate: date(args.expenseDate),
-              ...(parsed.data.description ? { description: parsed.data.description } : {}),
+              type: parsed.data.type,
+              ...(parsed.data.aboutPayroll ? { aboutPayroll: true } : {}),
+              subject: parsed.data.subject,
+              description: parsed.data.description,
             },
           },
-          done: { label: "My Expenses", path: "/my-expenses" },
-        },
-      };
-    }
-
-    case "update_goal_progress": {
-      const blocked = needsEmployee(ctx);
-      if (blocked) return refuse(blocked);
-      const goalId = id(args.goalId);
-      if (!goalId) return refuse("I need to know which goal.");
-      const parsed = check(goalUpdateSchema, { progress: num(args.progress) });
-      if (!parsed.ok) return refuse(parsed.reason);
-      if (parsed.data.progress === undefined) return refuse("I need a progress value between 0 and 100.");
-
-      const goal = await prisma.goal.findFirst({ where: { id: goalId, organizationId: org, employeeId: ctx.employeeId! } });
-      if (!goal) return refuse("I couldn't find that goal among yours.");
-
-      return {
-        ok: true,
-        proposal: {
-          kind,
-          title: `Set "${goal.title}" to ${parsed.data.progress}%`,
-          summary: [
-            ["Goal", goal.title],
-            ["Now", `${goal.progress}%`],
-            ["New", `${parsed.data.progress}%`],
-          ],
-          effect: "Updates the progress on your goal.",
-          confirmLabel: "Update progress",
-          danger: false,
-          request: { method: "PATCH", path: `/goals/me/${goal.id}`, body: { progress: parsed.data.progress } },
-          done: { label: "My Goals", path: "/goals" },
+          done: { label: "Helpdesk", path: "/helpdesk" },
         },
       };
     }
@@ -422,7 +442,9 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
       if (!taskId) return refuse("I need to know which task.");
       const done = bool(args.done) ?? true;
 
-      const task = await prisma.onboardingTask.findFirst({ where: { id: taskId, organizationId: org, employeeId: ctx.employeeId! } });
+      const task = await prisma.onboardingTask.findFirst({
+        where: { id: taskId, organizationId: org, employeeId: ctx.employeeId! },
+      });
       if (!task) return refuse("I couldn't find that task among yours.");
       if (task.done === done) return refuse(done ? "That task is already done." : "That task is already open.");
 
@@ -431,12 +453,17 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
         proposal: {
           kind,
           title: done ? `Mark "${task.title}" done` : `Reopen "${task.title}"`,
-          summary: [["Task", task.title]],
-          effect: done ? "Ticks the task off your onboarding checklist." : "Puts the task back on your checklist.",
+          summary: [
+            ["Task", task.title],
+            ...(task.requiresVerification
+              ? ([["Note", "HR still has to check this one before it counts as complete"]] as [string, string][])
+              : []),
+          ],
+          effect: done ? "Ticks the task off your joining checklist." : "Puts the task back on your checklist.",
           confirmLabel: done ? "Mark done" : "Reopen",
           danger: false,
           request: { method: "PATCH", path: `/onboarding/me/${task.id}`, body: { done } },
-          done: { label: "My Tasks", path: "/my-tasks" },
+          done: { label: "My Details", path: "/my-details" },
         },
       };
     }
@@ -445,7 +472,9 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
     case "decide_leave": {
       const requestId = id(args.leaveRequestId);
       const approve = bool(args.approve);
-      if (!requestId || approve === undefined) return refuse("I need to know which request, and whether to approve or reject it.");
+      if (!requestId || approve === undefined) {
+        return refuse("I need to know which request, and whether to approve or reject it.");
+      }
       const note = str(args.decisionNote, 5000);
 
       const request = await prisma.leaveRequest.findFirst({
@@ -455,15 +484,23 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
       if (!request) return refuse("I couldn't find that leave request.");
       if (request.status !== "PENDING") return refuse("That request has already been decided.");
 
-      const denied = await canDecide(ctx, { employeeId: request.employeeId, managerId: request.employee.managerId }, PERMISSIONS.LEAVE_MANAGE);
+      const denied = await canDecide(ctx, request.employeeId, LEAVE_PERMISSIONS);
       if (denied) return refuse(denied);
 
       if (approve && request.leaveType.defaultDaysPerYear > 0) {
         const balance = await prisma.leaveBalance.findUnique({
-          where: { employeeId_leaveTypeId_year: { employeeId: request.employeeId, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() } },
+          where: {
+            employeeId_leaveTypeId_year: {
+              employeeId: request.employeeId,
+              leaveTypeId: request.leaveTypeId,
+              year: request.startDate.getFullYear(),
+            },
+          },
         });
         if (balance && balance.allocatedDays - balance.usedDays < request.days) {
-          return refuse(`${fullName(request.employee)} only has ${balance.allocatedDays - balance.usedDays} day(s) left, and this request is ${request.days}.`);
+          return refuse(
+            `${fullName(request.employee)} only has ${balance.allocatedDays - balance.usedDays} day(s) left, and this request is ${request.days}.`,
+          );
         }
       }
 
@@ -485,107 +522,62 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
             : "Rejects the request and notifies them.",
           confirmLabel: approve ? "Approve leave" : "Reject leave",
           danger: !approve,
-          request: { method: "POST", path: `/leave-requests/${request.id}/${approve ? "approve" : "reject"}`, body: note ? { decisionNote: note } : {} },
-          done: { label: "Approvals", path: "/approvals" },
+          request: {
+            method: "POST",
+            path: `/leave-requests/${request.id}/${approve ? "approve" : "reject"}`,
+            body: note ? { decisionNote: note } : {},
+          },
+          done: { label: "Attendance & Leave", path: "/attendance?tab=leave" },
         },
       };
     }
 
-    case "decide_timesheet": {
-      const entryId = id(args.timesheetId);
+    case "decide_correction": {
+      const correctionId = id(args.correctionId);
       const approve = bool(args.approve);
-      if (!entryId || approve === undefined) return refuse("I need to know which timesheet, and whether to approve or reject it.");
-
-      const entry = await prisma.timesheetEntry.findFirst({ where: { id: entryId, organizationId: org }, include: { employee: true } });
-      if (!entry) return refuse("I couldn't find that timesheet entry.");
-      if (entry.status !== "PENDING") return refuse("That entry has already been decided.");
-
-      const denied = await canDecide(ctx, { employeeId: entry.employeeId, managerId: entry.employee.managerId }, PERMISSIONS.TIMESHEET_MANAGE);
-      if (denied) return refuse(denied);
-
-      return {
-        ok: true,
-        proposal: {
-          kind,
-          title: `${approve ? "Approve" : "Reject"} ${fullName(entry.employee)}'s hours`,
-          summary: [
-            ["Employee", fullName(entry.employee)],
-            ["Date", entry.date.toISOString().slice(0, 10)],
-            ["Hours", String(entry.hours)],
-            ...(entry.task ? ([["Task", entry.task]] as [string, string][]) : []),
-          ],
-          effect: approve ? "Approves the logged hours." : "Rejects the logged hours.",
-          confirmLabel: approve ? "Approve hours" : "Reject hours",
-          danger: !approve,
-          request: { method: "POST", path: `/timesheets/${entry.id}/${approve ? "approve" : "reject"}`, body: {} },
-          done: { label: "Approvals", path: "/approvals" },
-        },
-      };
-    }
-
-    case "decide_expense": {
-      const claimId = id(args.expenseId);
-      const approve = bool(args.approve);
-      if (!claimId || approve === undefined) return refuse("I need to know which claim, and whether to approve or reject it.");
+      if (!correctionId || approve === undefined) {
+        return refuse("I need to know which correction, and whether to approve or reject it.");
+      }
       const note = str(args.decisionNote, 5000);
 
-      const claim = await prisma.expenseClaim.findFirst({ where: { id: claimId, organizationId: org }, include: { employee: true } });
-      if (!claim) return refuse("I couldn't find that expense claim.");
-      if (claim.status !== "PENDING") return refuse("That claim has already been decided.");
+      const correction = await prisma.attendanceCorrectionRequest.findFirst({
+        where: { id: correctionId, organizationId: org },
+        include: { employee: true },
+      });
+      if (!correction) return refuse("I couldn't find that correction request.");
+      if (correction.status !== "PENDING") return refuse("That request has already been decided.");
 
-      const denied = await canDecide(ctx, { employeeId: claim.employeeId, managerId: claim.employee.managerId }, PERMISSIONS.EXPENSE_MANAGE);
+      const denied = await canDecide(ctx, correction.employeeId, CORRECTION_PERMISSIONS);
       if (denied) return refuse(denied);
 
       return {
         ok: true,
         proposal: {
           kind,
-          title: `${approve ? "Approve" : "Reject"} ${money(claim.amount)} claim`,
+          title: `${approve ? "Approve" : "Reject"} ${fullName(correction.employee)}'s attendance correction`,
           summary: [
-            ["Employee", fullName(claim.employee)],
-            ["Category", claim.category],
-            ["Amount", money(claim.amount)],
-            ["Date", claim.expenseDate.toISOString().slice(0, 10)],
+            ["Employee", `${fullName(correction.employee)} (${correction.employee.employeeCode})`],
+            ["Date", correction.date.toISOString().slice(0, 10)],
+            ...(correction.requestedCheckInAt
+              ? ([["Check in", correction.requestedCheckInAt.toISOString()]] as [string, string][])
+              : []),
+            ...(correction.requestedCheckOutAt
+              ? ([["Check out", correction.requestedCheckOutAt.toISOString()]] as [string, string][])
+              : []),
+            ["Reason", correction.reason],
             ...(note ? ([["Note", note]] as [string, string][]) : []),
           ],
-          effect: approve ? "Approves the claim, ready to be paid out." : "Rejects the claim and notifies them.",
-          confirmLabel: approve ? "Approve claim" : "Reject claim",
+          effect: approve
+            ? "Approves the correction and updates that day's attendance record."
+            : "Rejects the correction and leaves the day as it is.",
+          confirmLabel: approve ? "Approve correction" : "Reject correction",
           danger: !approve,
-          request: { method: "POST", path: `/expenses/${claim.id}/${approve ? "approve" : "reject"}`, body: note ? { decisionNote: note } : {} },
-          done: { label: "Approvals", path: "/approvals" },
-        },
-      };
-    }
-
-    case "decide_loan": {
-      const loanId = id(args.loanId);
-      const approve = bool(args.approve);
-      if (!loanId || approve === undefined) return refuse("I need to know which loan request, and whether to approve or reject it.");
-      const note = str(args.decisionNote, 5000);
-
-      const loan = await prisma.loanRequest.findFirst({ where: { id: loanId, organizationId: org }, include: { employee: true } });
-      if (!loan) return refuse("I couldn't find that loan request.");
-      if (loan.status !== "PENDING") return refuse("That request has already been decided.");
-
-      const denied = await canDecide(ctx, { employeeId: loan.employeeId, managerId: loan.employee.managerId }, PERMISSIONS.LOAN_MANAGE);
-      if (denied) return refuse(denied);
-
-      return {
-        ok: true,
-        proposal: {
-          kind,
-          title: `${approve ? "Approve" : "Reject"} ${money(loan.amount)} loan`,
-          summary: [
-            ["Employee", fullName(loan.employee)],
-            ["Amount", money(loan.amount)],
-            ["Repayment", `${loan.emiMonths} month(s)`],
-            ...(note ? ([["Note", note]] as [string, string][]) : []),
-          ],
-          effect: approve ? "Approves the loan and sets up the monthly deduction." : "Rejects the request and notifies them.",
-          confirmLabel: approve ? "Approve loan" : "Reject loan",
-          danger: !approve,
-          request: { method: "POST", path: `/loans/${loan.id}/${approve ? "approve" : "reject"}`, body: note ? { decisionNote: note } : {} },
-          done: { label: "Approvals", path: "/approvals" },
+          request: {
+            method: "POST",
+            path: `/attendance/corrections/${correction.id}/${approve ? "approve" : "reject"}`,
+            body: note ? { decisionNote: note } : {},
+          },
+          done: { label: "Attendance & Leave", path: "/attendance?tab=corrections" },
         },
       };
     }
@@ -612,21 +604,30 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
           confirmLabel: "Publish",
           danger: true,
           request: { method: "POST", path: "/announcements", body: parsed.data },
-          done: { label: "Announcements", path: "/announcements" },
+          done: { label: "Home", path: "/dashboard" },
         },
       };
     }
 
     case "create_job_posting": {
-      const denied = needsPermission(ctx, PERMISSIONS.RECRUITMENT_MANAGE, "manage recruitment");
+      const denied = needsPermission(ctx, PERMISSIONS.RECRUITMENT_MANAGE, "manage hiring");
       if (denied) return refuse(denied);
       const departmentId = id(args.departmentId);
-      const parsed = check(createPostingSchema, { title: args.title, description: args.description, ...(departmentId ? { departmentId } : {}) });
+      const parsed = check(createPostingSchema, {
+        title: args.title,
+        description: args.description,
+        ...(departmentId ? { departmentId } : {}),
+        ...(str(args.location, 200) ? { location: str(args.location, 200) } : {}),
+        ...(str(args.workMode, 20) ? { workMode: str(args.workMode, 20) } : {}),
+      });
       if (!parsed.ok) return refuse(parsed.reason);
 
       let departmentName: string | null = null;
       if (parsed.data.departmentId) {
-        const department = await prisma.department.findFirst({ where: { id: parsed.data.departmentId, organizationId: org }, select: { name: true } });
+        const department = await prisma.department.findFirst({
+          where: { id: parsed.data.departmentId, organizationId: org },
+          select: { name: true },
+        });
         if (!department) return refuse("I couldn't find that department in this company.");
         departmentName = department.name;
       }
@@ -635,54 +636,70 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
         ok: true,
         proposal: {
           kind,
-          title: `Open a posting for ${parsed.data.title}`,
+          title: `Open a job for ${parsed.data.title}`,
           summary: [
             ["Role", parsed.data.title],
             ...(departmentName ? ([["Department", departmentName]] as [string, string][]) : []),
+            ...(parsed.data.location ? ([["Location", parsed.data.location]] as [string, string][]) : []),
+            ...(parsed.data.workMode ? ([["Work mode", parsed.data.workMode]] as [string, string][]) : []),
             ["Description", parsed.data.description.slice(0, 300)],
           ],
-          effect: "Opens the posting so candidates can be added to it.",
-          confirmLabel: "Open posting",
+          effect: "Opens the job so candidates can be added to it.",
+          confirmLabel: "Open job",
           danger: false,
-          request: { method: "POST", path: "/recruitment/postings", body: parsed.data },
-          done: { label: "Recruitment", path: "/recruitment" },
+          request: { method: "POST", path: "/hiring/postings", body: parsed.data },
+          done: { label: "Hiring", path: "/hiring" },
         },
       };
     }
 
-    case "move_candidate": {
-      const denied = needsPermission(ctx, PERMISSIONS.RECRUITMENT_MANAGE, "manage recruitment");
+    case "move_application": {
+      const denied = needsPermission(ctx, PERMISSIONS.RECRUITMENT_MANAGE, "manage hiring");
       if (denied) return refuse(denied);
-      const candidateId = id(args.candidateId);
-      if (!candidateId) return refuse("I need to know which candidate.");
-      const parsed = check(updateCandidateSchema, { stage: args.stage });
+      const applicationId = id(args.applicationId);
+      if (!applicationId) return refuse("I need to know which application.");
+      const parsed = check(updateApplicationSchema, { stage: args.stage });
       if (!parsed.ok) return refuse(parsed.reason);
       if (!parsed.data.stage) return refuse("I need the stage to move them to.");
 
-      const candidate = await prisma.candidate.findFirst({
-        where: { id: candidateId, organizationId: org },
-        select: { id: true, firstName: true, lastName: true, stage: true, jobPosting: { select: { title: true } } },
+      const application = await prisma.jobApplication.findFirst({
+        where: { id: applicationId, organizationId: org },
+        select: {
+          id: true,
+          stage: true,
+          candidate: { select: { firstName: true, lastName: true } },
+          jobPosting: { select: { title: true } },
+        },
       });
-      if (!candidate) return refuse("I couldn't find that candidate.");
-      if (candidate.stage === "HIRED") return refuse("That candidate is already hired, so their stage can't be changed here.");
-      if (candidate.stage === parsed.data.stage) return refuse(`They're already at ${parsed.data.stage}.`);
+      if (!application) return refuse("I couldn't find that application.");
+      // Selected is not Joined, and Joined is settled.
+      if (application.stage === "JOINED") {
+        return refuse("That candidate has already joined, so this application's stage can't be changed.");
+      }
+      if (application.stage === parsed.data.stage) return refuse(`They're already at ${parsed.data.stage}.`);
 
       return {
         ok: true,
         proposal: {
           kind,
-          title: `Move ${fullName(candidate)} to ${parsed.data.stage}`,
+          title: `Move ${fullName(application.candidate)} to ${parsed.data.stage}`,
           summary: [
-            ["Candidate", fullName(candidate)],
-            ["Role", candidate.jobPosting?.title ?? "—"],
-            ["Now", candidate.stage],
+            ["Candidate", fullName(application.candidate)],
+            ["Role", application.jobPosting.title],
+            ["Now", application.stage],
             ["New", parsed.data.stage],
+            ...(parsed.data.stage === "SELECTED"
+              ? ([["Note", "Selected is not joined — confirming a joining is done on the Hiring page"]] as [
+                  string,
+                  string,
+                ][])
+              : []),
           ],
-          effect: "Moves them to that stage in the hiring pipeline.",
-          confirmLabel: "Move candidate",
+          effect: "Moves this application to that stage. Their other applications are unaffected.",
+          confirmLabel: "Move application",
           danger: parsed.data.stage === "REJECTED",
-          request: { method: "PATCH", path: `/recruitment/candidates/${candidate.id}`, body: { stage: parsed.data.stage } },
-          done: { label: "Recruitment", path: "/recruitment" },
+          request: { method: "PATCH", path: `/hiring/applications/${application.id}`, body: { stage: parsed.data.stage } },
+          done: { label: "Hiring", path: "/hiring" },
         },
       };
     }
@@ -702,18 +719,27 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
       });
       if (!parsed.ok) return refuse(parsed.reason);
 
-      const existing = await prisma.user.findFirst({ where: { email: parsed.data.email.toLowerCase() }, select: { id: true } });
-      if (existing) return refuse("Someone already has an account with that email address.");
+      const existing = await prisma.user.findFirst({
+        where: { organizationId: org, email: parsed.data.email.toLowerCase() },
+        select: { id: true },
+      });
+      if (existing) return refuse("Someone already has an account with that email address in this company.");
 
       let departmentName: string | null = null;
       if (parsed.data.departmentId) {
-        const department = await prisma.department.findFirst({ where: { id: parsed.data.departmentId, organizationId: org }, select: { name: true } });
+        const department = await prisma.department.findFirst({
+          where: { id: parsed.data.departmentId, organizationId: org },
+          select: { name: true },
+        });
         if (!department) return refuse("I couldn't find that department in this company.");
         departmentName = department.name;
       }
       let managerName: string | null = null;
       if (parsed.data.managerId) {
-        const manager = await prisma.employee.findFirst({ where: { id: parsed.data.managerId, organizationId: org }, select: { firstName: true, lastName: true } });
+        const manager = await prisma.employee.findFirst({
+          where: { id: parsed.data.managerId, organizationId: org },
+          select: { firstName: true, lastName: true },
+        });
         if (!manager) return refuse("I couldn't find that manager in this company.");
         managerName = fullName(manager);
       }
@@ -731,7 +757,8 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
             ...(managerName ? ([["Manager", managerName]] as [string, string][]) : []),
             ...(parsed.data.dateOfJoining ? ([["Joining", date(args.dateOfJoining)!]] as [string, string][]) : []),
           ],
-          effect: "Creates the employee and their login, and emails them a welcome link. Check the spelling: the email goes out immediately.",
+          effect:
+            "Creates the employee, their login and their joining checklist, and emails them a welcome link. It does not set salary or payroll. Check the spelling: the email goes out immediately.",
           confirmLabel: "Add employee",
           danger: true,
           request: {
@@ -747,7 +774,7 @@ export async function verifyAction(action: ParsedAction, ctx: AssistantContext):
               ...(parsed.data.dateOfJoining ? { dateOfJoining: date(args.dateOfJoining) } : {}),
             },
           },
-          done: { label: "Directory", path: "/people" },
+          done: { label: "Employees", path: "/employees" },
         },
       };
     }

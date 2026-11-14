@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth";
 import { HttpError } from "../../utils/HttpError";
+import { enforceDueExit } from "../../utils/employeeExit";
 import { loadUserContext } from "../../utils/loadUserContext";
 import { signAccessToken, signMfaToken, verifyMfaToken } from "../../utils/jwt";
 import { SYSTEM_ROLES } from "../../utils/permissions";
@@ -26,7 +27,7 @@ const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 // Compared against when the account doesn't exist, so response time doesn't reveal which emails are registered.
 const DUMMY_HASH = bcrypt.hashSync("workeasy-timing-equaliser", BCRYPT_COST);
-const INVALID_CREDENTIALS = "Incorrect organization ID, email or password.";
+const INVALID_CREDENTIALS = "Incorrect email or password.";
 const BAD_CODE = "That code didn't match. Check your authenticator app and try again.";
 
 export const passwordSchema = z
@@ -38,14 +39,16 @@ export const passwordSchema = z
 
 const totpCode = z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code");
 
-type SignInCandidate = { lockedUntil: Date | null; employee?: { status: string } | null };
+type SignInCandidate = { lockedUntil: Date | null; disabledAt: Date | null; employee?: { status: string } | null };
 
 function assertCanSignIn(user: SignInCandidate) {
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     const minutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
     throw new HttpError(429, `Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`);
   }
-  if (user.employee?.status === "EXITED") {
+  // HRMS access revoked for this organization (e.g. a recorded exit). The
+  // shared WorkEasy360 identity is unaffected.
+  if (user.disabledAt || user.employee?.status === "EXITED") {
     throw new HttpError(403, "This account has been deactivated. Contact your HR team.");
   }
 }
@@ -179,10 +182,16 @@ router.post("/register", async (req, res) => {
 });
 
 const loginSchema = z.object({
-  organizationSlug: z.string().trim().toLowerCase().min(1).max(48),
+  // Optional: most people sign in with email and password alone. The
+  // organization ID is only needed when one email belongs to more than one
+  // organization and the password fits more than one of those accounts.
+  organizationSlug: z.string().trim().toLowerCase().max(48).optional().transform((v) => v || undefined),
   email: z.string().trim().toLowerCase().email().max(254),
   password: z.string().min(1).max(128),
 });
+
+/** At most this many same-email accounts are tried, which bounds bcrypt work per request. */
+const MAX_LOGIN_CANDIDATES = 5;
 
 router.post("/login", async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
@@ -191,16 +200,44 @@ router.post("/login", async (req, res) => {
   }
   const { organizationSlug, email, password } = parsed.data;
 
-  // One lookup by organization slug + email (the pair is unique) instead of two sequential ones.
-  const user = await prisma.user.findFirst({
-    where: { email, organization: { slug: organizationSlug } },
+  // One read: the account in the named organization, or every account with this email.
+  const candidates = await prisma.user.findMany({
+    where: { email, ...(organizationSlug ? { organization: { slug: organizationSlug } } : {}) },
     include: { employee: { select: { status: true } } },
+    orderBy: { createdAt: "asc" },
+    take: MAX_LOGIN_CANDIDATES,
   });
 
-  // Always run bcrypt so unknown accounts take as long as wrong passwords.
-  const passwordOk = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+  // Always run bcrypt at least once so unknown accounts take as long as wrong passwords.
+  if (candidates.length === 0) await bcrypt.compare(password, DUMMY_HASH);
+  const checks = await Promise.all(candidates.map((c) => bcrypt.compare(password, c.passwordHash)));
+
+  let user: (typeof candidates)[number] | undefined;
+  let passwordOk = false;
+  if (candidates.length === 1) {
+    user = candidates[0];
+    passwordOk = checks[0];
+  } else if (candidates.length > 1) {
+    const matches = candidates.filter((_, i) => checks[i]);
+    // The password fits several organizations' accounts: only the organization ID can tell them apart.
+    if (matches.length > 1) {
+      return res.status(409).json({
+        error: "This email is used in more than one organization. Enter your Organization ID to continue.",
+        organizationRequired: true,
+      });
+    }
+    // No match is a plain wrong password; nothing is recorded against any one account.
+    if (matches.length === 0) return res.status(401).json({ error: INVALID_CREDENTIALS });
+    user = matches[0];
+    passwordOk = true;
+  }
+
   if (!user) {
     return res.status(401).json({ error: INVALID_CREDENTIALS });
+  }
+  // An exit whose effective date has arrived takes effect now (Employees 2.4.2).
+  if (await enforceDueExit(user.id)) {
+    return res.status(403).json({ error: "This account has been deactivated. Contact your HR team." });
   }
   assertCanSignIn(user);
   if (!passwordOk) {
@@ -224,8 +261,9 @@ router.post("/refresh", async (req, res) => {
   }
 
   const rotated = await rotateRefreshToken(refreshToken);
+  await enforceDueExit(rotated.userId);
   const { user, roles, permissions, employeeId } = await loadUserContext(rotated.userId);
-  if (user.employee?.status === "EXITED") {
+  if (user.disabledAt || user.employee?.status === "EXITED") {
     await revokeAllForUser(user.id);
     return res.status(401).json({ error: "This account has been deactivated." });
   }

@@ -2,15 +2,19 @@ import { Request, Response, Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middleware/auth";
-import { runAutomations } from "../../utils/automations";
+import { assertCanDecideRequest, resolveApprovalRoute, type ApprovalPermissions } from "../../utils/approvals";
 import { HttpError } from "../../utils/HttpError";
 import { PERMISSIONS } from "../../utils/permissions";
-import { daysBetweenInclusive } from "../../utils/date";
-import { assertCanDecide } from "../../utils/tenant";
+import { countWorkingDays, getWorkSchedule } from "../../utils/workSchedule";
 import { notifyLeaveRequested, notifyLeaveDecided } from "../../utils/notifications";
 
 const router = Router();
 router.use(requireAuth);
+
+export const LEAVE_PERMISSIONS: ApprovalPermissions = {
+  approve: PERMISSIONS.LEAVE_APPROVE,
+  manage: PERMISSIONS.LEAVE_MANAGE,
+};
 
 function requireSelfEmployee(req: Request): string {
   const employeeId = req.user!.employeeId;
@@ -28,17 +32,22 @@ router.get("/me", async (req, res) => {
   return res.json(requests);
 });
 
-// Requests awaiting *this* user's decision: HR/Admin see every pending request,
-// a manager sees pending requests from their direct reports.
+// Requests awaiting *this* user's decision. Authorized HR see every pending
+// request; a manager sees only their own direct reports (rule 07).
 router.get("/pending-approvals", async (req, res) => {
   const organizationId = req.user!.organizationId;
   const canManageAll = req.user!.permissions.includes(PERMISSIONS.LEAVE_MANAGE);
+  const canApproveReports = req.user!.permissions.includes(PERMISSIONS.LEAVE_APPROVE);
+  if (!canManageAll && !canApproveReports) return res.json([]);
 
   const requests = await prisma.leaveRequest.findMany({
     where: {
       organizationId,
       status: "PENDING",
-      ...(canManageAll ? {} : { employee: { managerId: req.user!.employeeId ?? "__none__" } }),
+      // Never show your own request: you can't approve it (rule 08).
+      employee: canManageAll
+        ? { id: { not: req.user!.employeeId ?? "__none__" } }
+        : { managerId: req.user!.employeeId ?? "__none__" },
     },
     include: { leaveType: true, employee: { select: { firstName: true, lastName: true, employeeCode: true } } },
     orderBy: { createdAt: "asc" },
@@ -58,20 +67,26 @@ export const createSchema = z
 
 router.post("/", async (req, res) => {
   const employeeId = requireSelfEmployee(req);
+  const organizationId = req.user!.organizationId;
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const { leaveTypeId, startDate, endDate, reason } = parsed.data;
 
-  const leaveType = await prisma.leaveType.findFirst({
-    where: { id: leaveTypeId, organizationId: req.user!.organizationId },
-  });
+  const [leaveType, schedule] = await Promise.all([
+    prisma.leaveType.findFirst({ where: { id: leaveTypeId, organizationId } }),
+    getWorkSchedule(organizationId, { from: startDate, to: endDate }),
+  ]);
   if (!leaveType) {
     return res.status(404).json({ error: "Leave type not found" });
   }
 
-  const days = daysBetweenInclusive(startDate, endDate);
+  // Working days only: weekly offs and holidays are not leave (rule 05).
+  const days = countWorkingDays(startDate, endDate, schedule);
+  if (days === 0) {
+    return res.status(400).json({ error: "That range has no working days. Check the organization's work schedule." });
+  }
 
   const overlapping = await prisma.leaveRequest.findFirst({
     where: {
@@ -98,15 +113,19 @@ router.post("/", async (req, res) => {
     }
   }
 
+  // Routed now so a missing approver is visible on the request itself (rule 08).
+  const route = await resolveApprovalRoute(organizationId, employeeId, LEAVE_PERMISSIONS);
+
   const request = await prisma.leaveRequest.create({
     data: {
-      organizationId: req.user!.organizationId,
+      organizationId,
       employeeId,
       leaveTypeId,
       startDate,
       endDate,
       days,
       reason,
+      routingNote: route.routingNote,
     },
     include: { leaveType: true },
   });
@@ -114,20 +133,38 @@ router.post("/", async (req, res) => {
   return res.status(201).json(request);
 });
 
+/**
+ * Cancel. A pending request simply closes; an approved one gives the balance
+ * back, exactly once (rule 04).
+ */
 router.post("/:id/cancel", async (req, res) => {
   const employeeId = requireSelfEmployee(req);
-  const request = await prisma.leaveRequest.findFirst({
-    where: { id: req.params.id, employeeId },
-  });
+  const request = await prisma.leaveRequest.findFirst({ where: { id: req.params.id, employeeId } });
   if (!request) return res.status(404).json({ error: "Leave request not found" });
-  if (request.status !== "PENDING") {
-    return res.status(409).json({ error: "Only pending requests can be cancelled" });
+  if (request.status !== "PENDING" && request.status !== "APPROVED") {
+    return res.status(409).json({ error: "Only pending or approved requests can be cancelled" });
+  }
+  if (request.status === "APPROVED" && request.endDate < new Date()) {
+    return res.status(409).json({ error: "Leave that has already been taken can't be cancelled. Ask HR for a correction." });
   }
 
-  const updated = await prisma.leaveRequest.update({
-    where: { id: request.id },
-    data: { status: "CANCELLED" },
+  const updated = await prisma.$transaction(async (tx) => {
+    // Conditional transition: a repeat call can't release the balance twice.
+    const { count } = await tx.leaveRequest.updateMany({
+      where: { id: request.id, employeeId, status: request.status },
+      data: { status: "CANCELLED", decidedAt: new Date() },
+    });
+    if (!count) throw new HttpError(409, "Request has already been updated");
+
+    if (request.status === "APPROVED") {
+      await tx.leaveBalance.updateMany({
+        where: { employeeId, leaveTypeId: request.leaveTypeId, year: request.startDate.getFullYear() },
+        data: { usedDays: { decrement: request.days } },
+      });
+    }
+    return tx.leaveRequest.findUniqueOrThrow({ where: { id: request.id }, include: { leaveType: true } });
   });
+
   return res.json(updated);
 });
 
@@ -138,9 +175,10 @@ async function decide(req: Request, res: Response, approve: boolean) {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
+  const organizationId = req.user!.organizationId;
 
   const request = await prisma.leaveRequest.findFirst({
-    where: { id: req.params.id, organizationId: req.user!.organizationId },
+    where: { id: req.params.id, organizationId },
     include: { employee: true },
   });
   if (!request) return res.status(404).json({ error: "Leave request not found" });
@@ -148,22 +186,25 @@ async function decide(req: Request, res: Response, approve: boolean) {
     return res.status(409).json({ error: "Request has already been decided" });
   }
 
-  await assertCanDecide(
-    req,
-    { employeeId: request.employeeId, managerId: request.employee.managerId },
-    PERMISSIONS.LEAVE_MANAGE,
-    "Not authorized to decide this request",
-  );
+  // Manager with the approval permission, or authorized HR; never yourself.
+  await assertCanDecideRequest({
+    organizationId,
+    reviewerEmployeeId: req.user!.employeeId,
+    requesterEmployeeId: request.employeeId,
+    permissions: LEAVE_PERMISSIONS,
+  });
 
   const updated = await prisma.$transaction(async (tx) => {
-    // Conditional transition: only one concurrent decision can win.
+    // Conditional transition: only one concurrent decision can win, so a repeat
+    // action can never apply the balance twice (rule 08).
     const { count } = await tx.leaveRequest.updateMany({
-      where: { id: request.id, organizationId: req.user!.organizationId, status: "PENDING" },
+      where: { id: request.id, organizationId, status: "PENDING" },
       data: {
         status: approve ? "APPROVED" : "REJECTED",
         approverId: req.user!.employeeId,
         decisionNote: parsed.data.decisionNote,
         decidedAt: new Date(),
+        routingNote: null,
       },
     });
     if (!count) throw new HttpError(409, "Request has already been decided");
@@ -180,7 +221,7 @@ async function decide(req: Request, res: Response, approve: boolean) {
       const balance = await tx.leaveBalance.upsert({
         where: { employeeId_leaveTypeId_year: balanceKey },
         create: {
-          organizationId: req.user!.organizationId,
+          organizationId,
           employeeId: decided.employeeId,
           leaveTypeId: decided.leaveTypeId,
           year,
@@ -198,10 +239,6 @@ async function decide(req: Request, res: Response, approve: boolean) {
 
     return decided;
   });
-
-  if (approve) {
-    await runAutomations("LEAVE_APPROVED", { organizationId: req.user!.organizationId, employeeId: updated.employeeId });
-  }
 
   void notifyLeaveDecided(updated.id);
   return res.json(updated);

@@ -1,32 +1,25 @@
 import {
-  BarChart3,
-  BookOpen,
   Briefcase,
-  Building2,
-  CalendarClock,
   CalendarDays,
-  CheckSquare,
   Clock,
   CreditCard,
   Home,
-  Landmark,
-  Laptop,
   LifeBuoy,
-  ListChecks,
-  Megaphone,
-  Package,
   Receipt,
-  ShieldCheck,
-  Target,
-  Timer,
-  TrendingUp,
+  Settings,
   User,
-  UserPlus,
   Users,
-  Wallet,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
+
+/**
+ * Navigation for the essential release.
+ *
+ * HR/Admin get seven menus; employees get five scoped views of the same
+ * records. There is no separate Approvals, Reports or Manager system: approval
+ * actions appear inside Home and Attendance & Leave, and summaries live on the
+ * page they belong to.
+ */
 
 export type NavItem = {
   href: string;
@@ -35,90 +28,122 @@ export type NavItem = {
   description: string;
   /** Extra search terms for the command palette. */
   keywords?: string;
-  /** Shown only if the user has at least one of these permissions. Omit for everyone. */
-  anyOf?: string[];
 };
-export type NavGroup = { title?: string; items: NavItem[] };
 
-export const NAV_GROUPS: NavGroup[] = [
-  { items: [{ href: "/dashboard", label: "Home", icon: Home, description: "Your day at a glance", keywords: "dashboard" }] },
+/** Holding any of these means the person works across the organization. */
+const ADMIN_PERMISSIONS = [
+  "employee:read",
+  "payroll:manage",
+  "compensation:manage",
+  "recruitment:manage",
+  "org:manage",
+  "role:manage",
+];
+
+export function isAdminView(hasPermission: (p: string) => boolean): boolean {
+  return ADMIN_PERMISSIONS.some(hasPermission);
+}
+
+/** The seven HR/Admin menus, in order. */
+export const ADMIN_NAV: NavItem[] = [
+  { href: "/dashboard", label: "Home", icon: Home, description: "Your day at a glance", keywords: "dashboard today" },
   {
-    title: "My Workspace",
-    items: [
-      { href: "/my-profile", label: "My Profile", icon: User, description: "Your personal and job details", keywords: "me account" },
-      { href: "/my-attendance", label: "My Attendance", icon: Clock, description: "Check in, check out, history", keywords: "punch clock in out" },
-      { href: "/my-leave", label: "My Leave", icon: CalendarDays, description: "Request time off and track it", keywords: "vacation holiday time off pto sick" },
-      { href: "/my-timesheet", label: "My Timesheet", icon: Timer, description: "Log hours worked", keywords: "hours log" },
-      { href: "/my-tasks", label: "My Tasks", icon: ListChecks, description: "Your onboarding checklist", keywords: "todo checklist" },
-      { href: "/goals", label: "My Goals", icon: Target, description: "Track goals and progress", keywords: "okr objectives" },
-      { href: "/my-payslips", label: "My Payslips", icon: Receipt, description: "Salary slips", keywords: "salary pay slip" },
-      { href: "/my-expenses", label: "My Expenses", icon: Wallet, description: "Submit and track claims", keywords: "reimbursement claim bill" },
-      { href: "/my-loans", label: "My Loans", icon: Landmark, description: "Request a loan, track EMIs", keywords: "advance emi" },
-      { href: "/my-assets", label: "My Assets", icon: Laptop, description: "Equipment assigned to you", keywords: "laptop device" },
-    ],
+    href: "/employees",
+    label: "Employees",
+    icon: Users,
+    description: "Directory, profiles, joining and exit",
+    keywords: "people staff team directory documents onboarding",
   },
   {
-    title: "People",
-    items: [
-      { href: "/people", label: "Directory", icon: Users, description: "Everyone in your organization", keywords: "employees staff team", anyOf: ["employee:read"] },
-      { href: "/approvals", label: "Approvals", icon: CheckSquare, description: "Requests waiting on you", keywords: "approve reject pending" },
-      { href: "/shifts", label: "Shifts", icon: CalendarClock, description: "Shift schedules", keywords: "roster schedule" },
-    ],
+    href: "/attendance",
+    label: "Attendance & Leave",
+    icon: Clock,
+    description: "Register, leave, corrections and the work schedule",
+    keywords: "check in out punch holiday time off approvals corrections",
   },
   {
-    title: "Talent",
-    items: [
-      { href: "/onboarding", label: "Onboarding", icon: UserPlus, description: "New-joiner checklists", anyOf: ["onboarding:manage"] },
-      { href: "/performance", label: "Performance", icon: TrendingUp, description: "Reviews and ratings", keywords: "appraisal review rating" },
-      { href: "/recruitment", label: "Recruitment", icon: Briefcase, description: "Jobs and candidates", keywords: "hiring jobs candidates", anyOf: ["recruitment:manage"] },
-    ],
+    href: "/payroll",
+    label: "Payroll",
+    icon: CreditCard,
+    description: "Salary details, monthly payroll and payslips",
+    keywords: "salary ctc compensation payslip finalize publish",
   },
   {
-    title: "HR Services",
-    items: [
-      { href: "/helpdesk", label: "Help Desk", icon: LifeBuoy, description: "Raise or track a ticket", keywords: "support ticket issue" },
-      { href: "/announcements", label: "Announcements", icon: Megaphone, description: "Company news", keywords: "news" },
-      { href: "/hr-guide", label: "HR Guide", icon: BookOpen, description: "Policies and how-tos", keywords: "policy handbook" },
-      { href: "/assets", label: "Assets", icon: Package, description: "Company asset inventory", keywords: "inventory equipment", anyOf: ["asset:manage"] },
-    ],
+    href: "/hiring",
+    label: "Hiring",
+    icon: Briefcase,
+    description: "Job openings, candidates and interviews",
+    keywords: "recruitment jobs candidates interview",
   },
   {
-    title: "Payroll & Insights",
-    items: [
-      {
-        href: "/payroll",
-        label: "Payroll",
-        icon: CreditCard,
-        description: "Runs, compensation, reimbursements",
-        keywords: "salary ctc compensation",
-        anyOf: ["payroll:manage", "compensation:manage", "expense:manage", "loan:manage"],
-      },
-      { href: "/reports", label: "Reports", icon: BarChart3, description: "Headcount, attrition, costs", keywords: "analytics", anyOf: ["employee:read"] },
-      { href: "/automation", label: "Automation", icon: Zap, description: "When-this-then-that rules", keywords: "rules workflow", anyOf: ["automation:manage"] },
-    ],
+    href: "/helpdesk",
+    label: "Helpdesk",
+    icon: LifeBuoy,
+    description: "Raise or answer a ticket",
+    keywords: "support ticket issue queue",
   },
   {
-    title: "Settings",
-    items: [
-      { href: "/settings/organization", label: "Organization", icon: Building2, description: "Organization profile", keywords: "company settings" },
-      { href: "/settings/security", label: "Security", icon: ShieldCheck, description: "Two-factor auth and audit log", keywords: "2fa password mfa audit" },
-    ],
+    href: "/settings",
+    label: "Settings",
+    icon: Settings,
+    description: "Company rules, roles, audit, automation and integrations",
+    keywords: "organization holidays leave types permissions 2fa connect webhook",
   },
 ];
 
-export const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+/** The five employee menus. Managers get the same, plus approval actions. */
+export const EMPLOYEE_NAV: NavItem[] = [
+  { href: "/dashboard", label: "Home", icon: Home, description: "Your day at a glance", keywords: "dashboard today" },
+  {
+    href: "/my-details",
+    label: "My Details",
+    icon: User,
+    description: "Your details, documents and joining checklist",
+    keywords: "profile personal emergency contact tasks",
+  },
+  {
+    href: "/attendance",
+    label: "Attendance & Leave",
+    icon: Clock,
+    description: "Check in, request leave, fix a past day",
+    keywords: "punch clock holiday time off correction",
+  },
+  { href: "/payslips", label: "Payslips", icon: Receipt, description: "Your published payslips", keywords: "salary pay slip" },
+  { href: "/helpdesk", label: "Helpdesk", icon: LifeBuoy, description: "Your tickets and replies", keywords: "support ticket" },
+];
 
-export function canSee(item: NavItem, hasPermission: (p: string) => boolean) {
-  return !item.anyOf || item.anyOf.some(hasPermission);
+/** Own-record pages, always reachable from the account menu. */
+export const ACCOUNT_NAV: NavItem[] = [
+  { href: "/my-details", label: "My details", icon: User, description: "Your own record" },
+  { href: "/payslips", label: "My payslips", icon: Receipt, description: "Your published payslips" },
+];
+
+/**
+ * Mobile bottom bar. Attendance and leave are tabs of one page, so they are one
+ * screen reached two ways rather than two separate workflows.
+ */
+export const MOBILE_NAV: NavItem[] = [
+  { href: "/dashboard", label: "Home", icon: Home, description: "Your day at a glance" },
+  { href: "/attendance", label: "Attendance", icon: Clock, description: "Check in and out" },
+  { href: "/attendance?tab=leave", label: "Leave", icon: CalendarDays, description: "Request time off" },
+  { href: "/helpdesk", label: "Help", icon: LifeBuoy, description: "Raise a ticket" },
+];
+
+export function mainNav(hasPermission: (p: string) => boolean): NavItem[] {
+  return isAdminView(hasPermission) ? ADMIN_NAV : EMPLOYEE_NAV;
 }
 
-/** Groups filtered to what the current user can actually use; empty groups are dropped. */
-export function visibleGroups(hasPermission: (p: string) => boolean): NavGroup[] {
-  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => canSee(i, hasPermission)) })).filter((g) => g.items.length > 0);
+/** Everything the command palette can jump to for this person. */
+export function searchableNav(hasPermission: (p: string) => boolean): NavItem[] {
+  const main = mainNav(hasPermission);
+  const extras = ACCOUNT_NAV.filter((a) => !main.some((m) => m.href === a.href));
+  return [...main, ...extras];
 }
 
+/** The menu a path belongs to, for the title and the active highlight. */
 export function findNavItem(pathname: string): NavItem | undefined {
-  return [...ALL_NAV_ITEMS]
+  return [...ADMIN_NAV, ...EMPLOYEE_NAV, ...ACCOUNT_NAV]
+    .filter((i) => !i.href.includes("?"))
     .sort((a, b) => b.href.length - a.href.length)
     .find((i) => pathname === i.href || pathname.startsWith(`${i.href}/`));
 }

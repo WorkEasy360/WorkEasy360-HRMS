@@ -33,20 +33,30 @@ export function PageHeader({
   subtitle,
   description,
   actions,
+  icon: Icon,
 }: {
   eyebrow?: ReactNode;
   title: string;
   subtitle?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
+  /** The page's menu icon, shown in a soft green tile beside the title. */
+  icon?: LucideIcon;
 }) {
   const sub = subtitle ?? description;
   return (
     <div className="c-page-header">
-      <div className="min-w-0">
-        {eyebrow && <p className="c-eyebrow">{eyebrow}</p>}
-        <h1 className="c-title">{title}</h1>
-        {sub && <p className="c-subtitle">{sub}</p>}
+      <div className="c-title-row">
+        {Icon && (
+          <div className="c-title-icon" aria-hidden>
+            <Icon strokeWidth={2} />
+          </div>
+        )}
+        <div className="min-w-0">
+          {eyebrow && <p className="c-eyebrow">{eyebrow}</p>}
+          <h1 className="c-title">{title}</h1>
+          {sub && <p className="c-subtitle">{sub}</p>}
+        </div>
       </div>
       {actions && <div className="c-toolbar">{actions}</div>}
     </div>
@@ -88,12 +98,16 @@ const VALUE_TONE_CLASS: Record<ValueTone, string> = {
   muted: "text-secondary",
 };
 
-/** One number in a `.c-stats` row. Values use tabular numerals. */
+/**
+ * One number in a `.c-stats` row, with its icon in a tinted tile on the left.
+ * Values use proportional figures at this size (see the dataviz guidance).
+ */
 export function StatCard({
   label,
   value,
   hint,
   icon: Icon,
+  iconTone,
   tone,
   valueTone,
 }: {
@@ -101,25 +115,49 @@ export function StatCard({
   value: ReactNode;
   hint?: ReactNode;
   icon?: LucideIcon;
+  /** The tile's colour. Defaults to brand green. */
+  iconTone?: "brand" | "info" | "warning" | "danger" | "ai";
   tone?: Tone;
   valueTone?: ValueTone;
 }) {
   return (
     <div className="c-stat">
-      <div className="flex items-center justify-between gap-2">
+      {Icon && (
+        <div className="c-icon-tile" data-tone={iconTone === "brand" ? undefined : iconTone} aria-hidden>
+          <Icon strokeWidth={2} />
+        </div>
+      )}
+      <div className="c-stat-body">
         <p className="c-stat-label">{label}</p>
-        {Icon && <Icon className="size-icon text-secondary" strokeWidth={2} aria-hidden />}
+        <p className={`c-stat-value ${valueTone ? VALUE_TONE_CLASS[valueTone] : ""}`}>{value}</p>
+        {hint &&
+          (tone ? (
+            <span className="c-badge self-start" data-tone={tone}>
+              {hint}
+            </span>
+          ) : (
+            <p className="c-stat-hint">{hint}</p>
+          ))}
       </div>
-      <p className={`c-stat-value ${valueTone ? VALUE_TONE_CLASS[valueTone] : ""}`}>{value}</p>
-      {hint &&
-        (tone ? (
-          <span className="c-badge self-start" data-tone={tone}>
-            {hint}
-          </span>
-        ) : (
-          <p className="c-stat-hint">{hint}</p>
-        ))}
     </div>
+  );
+}
+
+const AVATAR_TONES = [undefined, "info", "ai", "warning", "danger"] as const;
+
+/**
+ * Initials on a tinted disc. The tone comes from the name, so the same person
+ * keeps the same colour on every screen. It is decoration, never data.
+ */
+export function Avatar({ name, size }: { name: string; size?: "sm" | "lg" }) {
+  const parts = name.trim().split(/\s+/);
+  const initials = ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts[parts.length - 1][0] ?? "") : "")).toUpperCase();
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return (
+    <span className="c-avatar" data-size={size} data-tone={AVATAR_TONES[hash % AVATAR_TONES.length]} aria-hidden>
+      {initials || "?"}
+    </span>
   );
 }
 

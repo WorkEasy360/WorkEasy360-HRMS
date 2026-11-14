@@ -27,28 +27,35 @@ The design lives in the `packages/ui` package. Copy the whole folder into a new 
 
 ## Colour
 
-Aim for roughly **70% white and neutral surfaces, 20% navy structure and 10% green accents**.
+The UI/UX mocks (November 2026) set the look: a **deep green sidebar**, white
+cards on a pale green-grey canvas, and **one action green** for buttons, the
+active nav pill and selected tabs. Aim for roughly 70% white and neutral
+surfaces, 20% deep-green structure and 10% green accents.
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `--we-primary` | `#1B3040` navy | `#27455A` | Navigation, headings, high-emphasis structure (bulk bar, hero, badges) |
-| `--we-primary-hover` | `#112532` | `#315770` | Hover on navy fills |
-| `--we-accent` | `#4ADE80` green | `#4ADE80` | Primary buttons, active indicators, progress, "done" ticks |
-| `--we-accent-hover` | `#22C55E` | `#22C55E` | Hover on green fills |
-| `--we-on-accent` | `#1B3040` | `#112532` | Text on green (7.8:1). White on green fails contrast |
-| `--we-accent-soft` / `--we-accent-strong` | `#DCFCE7` / `#166534` | | Pale green background / green text |
-| `--we-background` | `#F8FAFC` | `#0B1620` | Application canvas, table headers |
-| `--we-surface` | `#FFFFFF` | `#112532` | Cards, top bar, inputs, menus, dialogs |
-| `--we-surface-muted` | `#F1F5F9` | `#16303F` | Hover, selected rows, tags, segmented tracks |
-| `--we-border` / `--we-border-strong` | `#E2E8F0` / `#CBD5E1` | `#27455A` / `#36576E` | Card and table lines / button outlines and dashed edges |
-| `--we-border-input` | `#7D8BA0` | `#5A7A91` | Text field outlines: at least 3:1 against every surface they sit on (WCAG 1.4.11) |
-| `--we-text-primary` | `#1B3040` | `#F1F5F9` | Headings, titles, values |
-| `--we-text-body` | `#334155` | `#CBD5E1` | Body text |
-| `--we-text-secondary` | `#64748B` | `#94A3B8` | Hints, labels, metadata |
-| `--we-link` | `#166534` | `#4ADE80` | Text links, always underlined |
-| `--we-focus` | `#1B3040` | `#4ADE80` | Focus rings. Green on navy surfaces (sidebar, bulk bar) |
+| `--we-primary` | `#0C4F37` deep green | `#0B3326` | Sidebar and hero structure |
+| `--we-sidebar-top` / `--we-sidebar-bottom` | `#0C4F37` / `#073326` | `#0C3A2B` / `#082A1F` | The sidebar's vertical gradient (`.c-sidebar`) |
+| `--we-on-primary` / `--we-on-primary-muted` | `#E7F5EE` / `#A3C8B6` | `#E7F5EE` / `#9EC2B1` | Text on the green regions (8.5:1 / 5.3:1 at worst) |
+| `--we-nav-active` / `--we-on-nav-active` | `#15803D` / `#FFFFFF` | same | The active sidebar pill and the product pill (5.0:1) |
+| `--we-accent` | `#15803D` | `#22C55E` | Primary buttons, selected tab underline, the "360" of the wordmark |
+| `--we-on-accent` | `#FFFFFF` | `#052E16` | Text on the action green (5.0:1 / 6.5:1) |
+| `--we-accent-soft` / `--we-accent-strong` | `#DCFCE7` / `#166534` | `#133D27` / `#86EFAC` | Pale green tiles and selected tabs / green text on them (6.5:1) |
+| `--we-background` | `#F4F7F5` | `#0A1612` | Application canvas |
+| `--we-surface` | `#FFFFFF` | `#11211B` | Cards, top bar, inputs, menus, dialogs |
+| `--we-surface-muted` | `#F1F5F3` | `#172B23` | Table header band, hover, week-strip days |
+| `--we-border` / `--we-border-strong` | `#E3E9E5` / `#C9D4CE` | `#233A31` / `#2F4B40` | Card and table lines / outlines |
+| `--we-text-primary` | `#101828` | `#ECF5F0` | Headings, titles, values |
+| `--we-text-body` | `#344054` | `#C5D3CC` | Body text |
+| `--we-text-secondary` | `#5D6B7A` | `#95A99F` | Hints, labels, metadata (5.1:1 on the canvas) |
+| `--we-link` | `#15803D` | `#4ADE80` | Text links |
+| `--we-focus` | `#15803D` | `#4ADE80` | Focus rings; light green on the sidebar |
 
-**Never use brand green for small text on white** (1.9:1). For green text, use `--we-accent-strong` or `--we-success-text`. Secondary text passes AA on white and on the canvas, but not on `--we-surface-muted` (4.3:1), so don't put it there.
+Every text/fill pair above was checked against WCAG AA (4.5:1) when the theme
+was set. Run the same check if you change a value.
+
+Shape and size follow the mocks too: cards and tables at 14px radius, controls
+40px tall, a 68px top bar, 44px sidebar items.
 
 ### Status colours
 
@@ -57,7 +64,7 @@ Each status has three steps:
 - **`-soft`**, a pale background
 - **`-text`**, a dark foreground that passes AA on the soft background (6.4–7.6:1)
 
-Badges and alerts always pair the colour with a label and a dot, so status never depends on colour alone.
+Badges and alerts always say their status in words, so status never depends on colour alone. Badges are soft pills in title case ("Present", "On Leave"); the dot is opt-in (`data-dot="true"`) for a badge whose label is a count or a name.
 
 | Status | Base | Soft | Text |
 |---|---|---|---|
@@ -71,18 +78,18 @@ Badges and alerts always pair the colour with a label and a dot, so status never
 
 ### Charts
 
-- Charts sit on white surfaces with `--we-border` grid lines and secondary-text axes.
-- Series take `--we-chart-1…3` in a fixed order:
+Charts live in [ui/components/charts.tsx](../frontend/src/ui/components/charts.tsx):
+`BarTrend`, `LineTrend` and `Donut`, plain SVG, no chart library. Every colour
+below passed `validate_palette.js` from the dataviz guidance (lightness band,
+chroma, colour-blind and normal-vision separation, contrast) in both modes.
 
-  | Mode | Navy-blue | Green | Violet |
-  |---|---|---|---|
-  | Light | `#235E9C` | `#16A34A` | `#8B5CF6` |
-  | Dark | `#5A93D8` | `#1FAF55` | `#9F7AEA` |
-
-- Both sets pass the dataviz palette validator: lightness band, chroma, colour-blind and normal-vision separation, and 3:1 contrast. Brand navy is too grey to separate as a series, so series 1 is a more saturated navy-blue.
-- Green and amber are hard to tell apart for colour-blind users, so amber is kept for ratings and is not a series colour.
-- A fourth series folds into "Other".
+- **Categorical** (`--we-chart-1…3`): blue, orange, aqua — light `#2A78D6` `#EB6834` `#1BAF7A`, dark `#3987E5` `#D95926` `#199E70`. Safe all-pairs for three slots; a fourth series folds into "Other". Light aqua is under 3:1, so these charts always print a labelled legend with values. The mock's green/blue/yellow leave donut failed colour-blind separation and was not used.
+- **Single series** (`--we-chart-single`, `#16A34A`): the attendance trend. One series, so no legend box — the card title names it.
+- **Attendance status** (`--we-chart-present` / `-leave` / `-absent` / `-pending`): green, blue, red, then a neutral grey for "not yet checked in". In a donut the last slice touches the first, and green next to red fails colour-blind separation; the neutral slot between them is what makes the ring pass.
+- Marks follow the spec: bars at most 24px, square at the baseline and 4px round at the cap; 2px lines with an end dot in a 2px surface ring; 1px solid grid; a 2px surface gap between donut segments.
+- Labels are selective — the latest value is printed, every value is in the hover tooltip and in a screen-reader table.
 - Text in charts uses text tokens, never the series colour.
+- A rate is only drawn for working days. A weekend or holiday has no value, so it never reads as a bad day.
 
 ### Dark mode
 
@@ -111,10 +118,10 @@ Dark mode follows the operating system until someone chooses with the theme togg
 
 | Component | Classes | Notes |
 |---|---|---|
-| Buttons | `c-btn` (secondary), `c-btn-primary` (green), `c-btn-dark` (navy), `c-btn-danger`, `c-btn-ghost`, `c-btn-sm`, `c-btn-icon` | One primary button per view. Disabled at 50% |
-| Inputs | `c-input`, `c-select`, `c-textarea`, `c-input-group`, `c-tags`, `c-search` | Navy focus border plus ring; `aria-invalid` turns them red |
+| Buttons | `c-btn` (secondary), `c-btn-primary` (green), `c-btn-dark` (deep green), `c-btn-danger`, `c-btn-ghost`, `c-btn-sm`, `c-btn-icon` | One primary button per view. Disabled at 50% |
+| Inputs | `c-input`, `c-select`, `c-textarea`, `c-input-group`, `c-tags`, `c-search` | Green focus border plus ring; `aria-invalid` turns them red |
 | Choices | `c-check-input`, `c-radio-card`, `c-segmented`, `c-range` | |
-| Navigation | `c-nav`, `c-tabs`, `c-back`, `c-pager` | Active means navy text plus a green indicator |
+| Navigation | `c-nav`, `c-tabs`, `c-back`, `c-pager`, `c-bottom-nav` | The active nav item is a solid green pill. Tabs are a segmented control in a white tray; the selected tab is soft green with a green underline |
 | Content | `c-card`, `c-stat`, `c-table`, `c-kv`, `c-checklist`, `c-feature-list` | Tables stack into labelled rows on phones (`c-table-stack`) |
 | Status | `c-badge[data-tone]`, `c-alert[data-tone]`, `c-progress`, `c-skeleton`, `c-empty` | Tones: success, warning, danger, info, brand, ai |
 | Floating | `c-menu`, `c-listbox`, `c-dialog`, `c-drawer`, `c-chart-tip`, `c-fab`, `c-chatbox` | `c-fab` is the AI assistant launcher, fixed to the bottom-right corner. `c-chatbox` is its chat window (full screen on phones). See `ai-assistant-blueprint.md` |
@@ -124,7 +131,8 @@ Dark mode follows the operating system until someone chooses with the theme togg
 
 Every product uses this shell; only the navigation items differ.
 
-- **Sidebar** (navy, 248px): product logo and name, then the navigation in groups. The active item has a lighter fill, a green bar and a green icon. On screens narrower than 960px the sidebar becomes a drawer.
+- **Sidebar** (deep green gradient, 256px): the stacked lockup — mark, "WorkEasy360" with "360" in green, and the HRMS pill — then a flat list of seven (HR/Admin) or five (employee) menus. The active item is a solid green pill. Below 960px it becomes a drawer, and a bottom bar (Home, Attendance, Leave, Help, More) appears; the assistant launcher rides above that bar.
+- **Top bar** (white, 68px): the organization chip on the left (a label, not a switcher — one organization per user), then search, notifications, help, theme and the person with their job title.
 - **Top bar** (white, 56px):
   - Left: the workspace switcher and search. Search jumps to any module or page the role can open; press `/` or Ctrl+K to focus it.
   - Right: product actions, notifications, settings, the theme toggle and the account menu.
@@ -176,7 +184,7 @@ The design system lives in [frontend/src/ui](../frontend/src/ui), laid out like 
 
 | File | What it holds |
 |---|---|
-| [ui/tokens.css](../frontend/src/ui/tokens.css) | Every `--we-*` value, light and dark, plus the `[data-region="primary"]` swap for navy regions |
+| [ui/tokens.css](../frontend/src/ui/tokens.css) | Every `--we-*` value, light and dark, plus the `[data-region="primary"]` swap for the green regions |
 | [ui/admin.css](../frontend/src/ui/admin.css) | The `c-*` classes, in the `components` cascade layer, reading only tokens |
 | [ui/tokens.ts](../frontend/src/ui/tokens.ts) | Typed `var(--we-*)` references for code that needs a value in JS (chart series, inline SVG) |
 | [ui/components/](../frontend/src/ui/components/) | `Button`/`IconButton`, `Page`, `PageHeader`, `Card`, `StatCard`, `EmptyState`, `Badge`, `Alert`, `Progress`, `Skeleton`, `ErrorBanner`, `BrandMark`/`Lockup`, `ThemeToggle` |
@@ -191,9 +199,9 @@ Where this differs from the shared description above, and why:
 - **Tailwind's own `text-*` scale is kept.** Its defaults already equal the system's steps at 12, 14, 16, 18 and 24px; only 13px (secondary) and the unused 20px differ, and the `c-*` classes take their sizes from `--we-font-size-*` directly.
 - **The brand mark is the supplied artwork, not a vector.** [ui/assets/logo.jpg](../frontend/src/ui/assets/logo.jpg) is the file as delivered; [ui/assets/logo.png](../frontend/src/ui/assets/logo.png) is the same image with its flat background solved away into a real alpha channel, so it sits cleanly on white and on navy with no fringe. `BrandMark` in [ui/components/logo.tsx](../frontend/src/ui/components/logo.tsx) renders that PNG. The same master produces [app/icon.png](../frontend/src/app/icon.png) (the tab icon), [app/apple-icon.png](../frontend/src/app/apple-icon.png) (the iOS home screen, which composites on black and so carries its own white ground) and [public/logo.png](../frontend/public/logo.png) (transactional email, where SVG is not reliably rendered).
 - **The mark is therefore the one thing in the system a token cannot colour.** It carries the logo green in its own pixels. `--we-logo` still records that value for anything else that needs it.
-- **The mark keeps the logo green on every background.** At 2.4:1 on white it would fail WCAG 1.4.11, but a brand mark is a logotype and exempt. It is 5.6:1 on the light navy sidebar and 4.1:1 on the dark one.
+- **The mark keeps the logo green on every background.** At 2.4:1 on white it would fail WCAG 1.4.11, but a brand mark is a logotype and exempt. On the green sidebar it is 3.9:1 at the top of the gradient where it sits (5.2:1 in dark mode), clear of the 3:1 graphics threshold.
 - **Tokens added here:** `--we-on-primary` and `--we-on-primary-muted` (text on navy), `--we-on-error` (text on the danger fill), `--we-focus-on-primary` (the green ring on navy), `--we-scrim` (dialog and drawer backdrops), `--we-radius-full`, and `--we-size-fab` (56px, the assistant launcher). Two of them need a dark step the shared table does not give: `--we-on-primary-muted` goes to `#AEBBCB`, because the dark navy is lighter than the light one (`#94A3B8` is only 3.9:1 on it), and `--we-rating` goes to `#F59E0B`, because `#B45309` is 3.1:1 on the dark surface.
 - **`.c-search` sits on `--we-surface`, not `--we-surface-muted`.** Secondary text is 4.34:1 on the muted surface, which the colour section says to avoid, and the search control's own border already separates it. The inactive label in `.c-segmented` is body rather than secondary for the same reason.
-- **`c-fab` and `c-chatbox` carry the AI assistant**, together with a `c-chat-*` family for the bubbles, the suggestions and the confirmation card, and `AgentAvatar` — the assistant's robot face, drawn from `--we-on-primary`, `--we-accent` and `--we-primary` so it follows the theme. The launcher is a navy disc with a ring of `--we-accent` at 50%. See [04-ai-assistant.md](./04-ai-assistant.md).
+- **`c-fab` and `c-chatbox` carry the AI assistant**, together with a `c-chat-*` family for the bubbles, the suggestions and the confirmation card, and `AgentAvatar` — the assistant's robot face, drawn from `--we-on-primary`, `--we-accent` and `--we-primary` so it follows the theme. The launcher is a deep-green disc with a ring of `--we-accent` at 50%. See [04-ai-assistant.md](./04-ai-assistant.md).
 
 Dark mode is wired end to end: the toggle cycles system → light → dark, saves the choice per browser, and an inline script in [app/layout.tsx](../frontend/src/app/layout.tsx) applies it before first paint. The font is Inter, self-hosted by `next/font`, with tabular numerals in tables, stats and charts.

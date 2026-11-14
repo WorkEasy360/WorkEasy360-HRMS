@@ -9,12 +9,12 @@ const STATUS_TONES: Record<string, Tone | undefined> = {
   PENDING: "warning",
 
   // In flight
-  SCREENING: "info",
+  SHORTLISTED: "info",
   INTERVIEW: "info",
   IN_PROGRESS: "info",
-  ASSIGNED: "info",
-  REIMBURSED: "info",
-  OFFER: "ai",
+  WAITING: "warning",
+  ON_HOLD: "warning",
+  SELECTED: "ai",
 
   // Done or good
   APPROVED: "success",
@@ -22,10 +22,17 @@ const STATUS_TONES: Record<string, Tone | undefined> = {
   AVAILABLE: "success",
   OPEN: "success",
   ONBOARDING: "success",
-  HIRED: "success",
+  JOINED: "success",
   RESOLVED: "success",
   COMPLETED: "success",
-  PROCESSED: "success",
+  FINALIZED: "success",
+  PUBLISHED: "success",
+  PRESENT: "success",
+  ON_LEAVE: "info",
+  NOT_CHECKED_IN: "warning",
+  ABSENT: "danger",
+  HOLIDAY: undefined,
+  WEEKLY_OFF: undefined,
 
   // Refused
   REJECTED: "danger",
@@ -42,7 +49,11 @@ const STATUS_TONES: Record<string, Tone | undefined> = {
 export function StatusBadge({ status }: { status: string }) {
   return (
     <span className="c-badge" data-tone={STATUS_TONES[status]}>
-      {status.replace(/_/g, " ")}
+      {status
+        .toLowerCase()
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ")}
     </span>
   );
 }

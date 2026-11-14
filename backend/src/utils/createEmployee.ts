@@ -2,18 +2,11 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { prisma } from "../config/prisma";
 import { HttpError } from "./HttpError";
-import { runAutomations } from "./automations";
+import { createJoiningChecklist } from "./automations";
 import { isEmailEnabled } from "./mailer";
 import { sendWelcomeEmail } from "./notifications";
 import { createPasswordToken, INVITE_TTL_MS } from "./passwordTokens";
 import { assertInOrg } from "./tenant";
-
-const DEFAULT_ONBOARDING_TASKS = [
-  "Complete personal profile",
-  "Submit ID documents",
-  "IT / equipment setup",
-  "Meet your manager",
-];
 
 export interface CreateEmployeeInput {
   email: string;
@@ -26,10 +19,10 @@ export interface CreateEmployeeInput {
   dateOfJoining?: Date;
 }
 
-// Shared by direct employee creation (People > Add employee) and hiring a
-// candidate from Recruitment: creates a User + Employee, assigns the default
-// Employee role, seeds onboarding tasks, and fires the EMPLOYEE_ONBOARDED
-// automation trigger.
+// Shared by direct employee creation (Employees > Add) and confirming a
+// candidate's joining from Hiring: creates a User + Employee, assigns the
+// default Employee role and seeds the one essential joining checklist, so both
+// routes produce the same record (Employees 2.3.3).
 //
 // Access: with email configured, the new user gets a "set your password" link and
 // no password is ever shown to HR (`inviteSent: true`). Without email, a temporary
@@ -78,17 +71,11 @@ export async function createEmployeeWithUser(organizationId: string, input: Crea
         dateOfJoining: input.dateOfJoining,
       },
     });
-    await tx.onboardingTask.createMany({
-      data: DEFAULT_ONBOARDING_TASKS.map((title) => ({
-        organizationId,
-        employeeId: employee.id,
-        title,
-      })),
-    });
     return { user, employee };
   });
 
-  await runAutomations("EMPLOYEE_ONBOARDED", { organizationId, employeeId: result.employee.id });
+  // Idempotent: a retried creation or conversion never duplicates tasks.
+  await createJoiningChecklist(organizationId, result.employee.id);
 
   if (inviteByEmail) {
     const organization = await prisma.organization.findUniqueOrThrow({ where: { id: organizationId } });

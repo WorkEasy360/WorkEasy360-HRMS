@@ -12,14 +12,22 @@ const finders = {
     db.employee.findFirst({ where: { id, organizationId }, select: { id: true } }),
   department: (db: Db, id: string, organizationId: string) =>
     db.department.findFirst({ where: { id, organizationId }, select: { id: true } }),
-  reviewCycle: (db: Db, id: string, organizationId: string) =>
-    db.reviewCycle.findFirst({ where: { id, organizationId }, select: { id: true } }),
-  shiftTemplate: (db: Db, id: string, organizationId: string) =>
-    db.shiftTemplate.findFirst({ where: { id, organizationId }, select: { id: true } }),
   leaveType: (db: Db, id: string, organizationId: string) =>
     db.leaveType.findFirst({ where: { id, organizationId }, select: { id: true } }),
   jobPosting: (db: Db, id: string, organizationId: string) =>
     db.jobPosting.findFirst({ where: { id, organizationId }, select: { id: true } }),
+  candidate: (db: Db, id: string, organizationId: string) =>
+    db.candidate.findFirst({ where: { id, organizationId }, select: { id: true } }),
+  jobApplication: (db: Db, id: string, organizationId: string) =>
+    db.jobApplication.findFirst({ where: { id, organizationId }, select: { id: true } }),
+  payrollRun: (db: Db, id: string, organizationId: string) =>
+    db.payrollRun.findFirst({ where: { id, organizationId }, select: { id: true } }),
+  helpDeskTicket: (db: Db, id: string, organizationId: string) =>
+    db.helpDeskTicket.findFirst({ where: { id, organizationId }, select: { id: true } }),
+  integrationConnection: (db: Db, id: string, organizationId: string) =>
+    db.integrationConnection.findFirst({ where: { id, organizationId }, select: { id: true } }),
+  integrationMapping: (db: Db, id: string, organizationId: string) =>
+    db.integrationMapping.findFirst({ where: { id, organizationId }, select: { id: true } }),
 };
 
 export type OrgModel = keyof typeof finders;

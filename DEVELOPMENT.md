@@ -54,7 +54,7 @@ To stop everything: `Ctrl+C` in both terminals, then `docker stop workeasy-postg
 ### Backend (`backend/src`)
 
 - `index.ts`: middleware (helmet, CORS, body limit, rate limits), route mounting, `/api/health`, graceful shutdown.
-- `modules/<feature>/<feature>.routes.ts`: one Express router per feature (leave, payroll, recruitment…).
+- `modules/<feature>/<feature>.routes.ts`: one Express router per feature. The essential release has twenty: `announcements`, `assistant`, `attendance` (register, corrections and the work schedule), `audit`, `auth`, `automation`, `compensation`, `departments`, `documents`, `employees`, `helpdesk`, `integrations`, `leaveRequests`, `leaveTypes`, `onboarding`, `organizations`, `payroll`, `policies`, `recruitment` (mounted at `/api/hiring`) and `roles`.
 - `ai/`: **the AI assistant** — providers, the turn loop, and what this product lets it see and do. `modules/assistant/` holds the route, the read-only tools and the confirmable actions. See [docs/04-ai-assistant.md](./docs/04-ai-assistant.md).
 - `middleware/`
   - `auth.ts` (`requireAuth`)
@@ -62,22 +62,27 @@ To stop everything: `Ctrl+C` in both terminals, then `docker stop workeasy-postg
   - `rateLimit.ts` (in-memory)
   - `errorHandler.ts`
 - `utils/`
-  - `permissions.ts`: the permission catalog and default roles (Admin, HR, Manager, Employee)
+  - `permissions.ts`: the permission catalog and default roles (Admin, HR, Manager, Employee). Payroll and helpdesk queue access are explicit grants; `leave:approve` / `attendance:approve` are the manager-level ones and `leave:manage` / `attendance:manage` the org-wide HR ones.
+  - `approvals.ts`: where a request routes (assigned manager → authorized HR), and the self-approval guard
+  - `workSchedule.ts`: working days, holidays, the organization time zone, and how one day is counted
+  - `employeeExit.ts`: recording an exit and revoking HRMS access without touching the shared identity
   - `tenant.ts`: `assertInOrg`, `assertCanDecide` (tenant isolation and approval rules)
   - `jwt.ts`, `refreshTokens.ts`, `passwordTokens.ts`: tokens and single-use links
   - `mailer.ts`, `emailTemplates.ts`, `notifications.ts`: SES email, queued and best-effort
-  - `createEmployee.ts`: shared by "Add employee" and "Hire candidate"
+  - `createEmployee.ts`: shared by "Add employee" and "Confirm joining"
+  - `automations.ts`: the fixed catalog of internal rules, their switches, and the one joining checklist
   - `date.ts`: date helpers for `@db.Date` columns (UTC midnight)
 - `prisma/schema.prisma` and `prisma/migrations/`: the schema; migrations are committed and applied in order.
 
 ### Frontend (`frontend/src`)
 
-- `app/(app)/…/page.tsx`: signed-in pages. `app/(app)/layout.tsx` is the shell: sidebar, search, approvals bell, and a no-access guard.
+- `app/(app)/…/page.tsx`: signed-in pages. HR/Admin see seven: `dashboard` (Home), `employees`, `attendance`, `payroll`, `hiring`, `helpdesk`, `settings`. Employees see five: `dashboard`, `my-details`, `attendance`, `payslips`, `helpdesk`. `app/(app)/layout.tsx` is the shell: sidebar, search, the "waiting on you" bell, and the mobile bottom bar.
+- Approvals are **not** a page. They appear inside Home and inside the Attendance & Leave tab that owns the request.
 - `app/login`, `register`, `forgot-password`, `reset-password`: public pages.
 - `lib/`
   - `api.ts` (`apiFetch`: auth header, token refresh, readable errors)
   - `auth-context.tsx` (`useAuth`, `hasPermission`)
-  - `navigation.ts`: **the menu and page permissions, in one place**
+  - `navigation.ts`: **the seven/five menus and the mobile bottom bar, in one place**
   - `use-app-config.ts`: server flags such as email and registration
 - `components/AssistantPanel.tsx`: the AI assistant's button and chat window — see [docs/04-ai-assistant.md](./docs/04-ai-assistant.md)
 - `ui/`: **the WorkEasy360 design system** — see [docs/design-system.md](./docs/design-system.md)
@@ -91,6 +96,8 @@ To stop everything: `Ctrl+C` in both terminals, then `docker stop workeasy-postg
   - `feedback.tsx`: `useFeedback()` for `toast.*` and `confirm()`
   - `format.ts`: `formatDate`, `formatMoney` (₹) and friends
   - `StatusBadge.tsx`, `CommandPalette.tsx`, `AuthShell.tsx`, `PasswordInput.tsx`, `AccessNotice.tsx`
+  - `DocumentsPanel.tsx`, `ChecklistPanel.tsx`: reused by My Details and the employee profile
+  - `settings/`: one component per Settings tab (company rules, roles, shared links, audit, automation, integrations, account)
   - `globals.css` (in `app/`) imports the token and component CSS and maps Tailwind's theme onto the tokens, so `bg-surface`, `text-secondary` and `border-line` resolve to `var(--we-*)`
 
 ## Rules the code follows (keep them)
@@ -188,6 +195,35 @@ A new environment variable needs three changes: read it in the backend, document
 - **Dates:** `@db.Date` columns are stored as UTC midnight. Use `today()` and `monthRange()` from `utils/date.ts`, and `localIsoDate()` from `components/format.ts` on the frontend. The API container runs with `TZ=Asia/Kolkata` (from `APP_TIMEZONE`).
 - **Rate limits:** 10 sign-in and password requests per minute per IP. Test scripts that sign in repeatedly will hit HTTP 429. That's intended.
 - **Shared cluster capacity:** Aurora allows 79 connections in total. This app uses at most 10 (role limit 20); the help desk and the other product share the rest.
+
+## Scope: the essential release
+
+The product follows the Essential Development Note v9. Performance reviews, goals,
+assets, expenses, loans, shift rostering, timesheets, the standalone Reports menu
+and the generic automation-rule builder were **removed**, together with their
+tables, in migration `20261113090000_essential_scope_v9`. Don't reintroduce them
+without a scope decision.
+
+Things that are easy to get wrong, and are deliberate:
+
+- **Not checked in is not absent.** A working day only becomes `ABSENT` after the
+  configured end time in the organization's time zone (`utils/workSchedule.ts`).
+- **Nobody approves their own request**, whatever their role. Requests route to
+  the assigned manager holding the approval permission, otherwise to authorized
+  HR; with neither, the request stays pending and carries a `routingNote`.
+- **Payroll is review-and-confirm**: prepare → adjust → finalize → publish. A
+  finalized payslip is corrected by a revision that keeps the original row.
+  Publishing a payslip is not payment, and no statutory deduction is applied
+  automatically.
+- **Payroll eligibility comes from joining/exit dates**, not today's status: an
+  exited employee may still be owed the final period.
+- **A candidate is a person; an application is one job.** The same person can
+  apply to several jobs without a duplicate record, and Selected is not Joined.
+- **An exit revokes HRMS access for this organization only.** No history is
+  deleted and the shared WorkEasy360 identity is untouched.
+- **Integrations are a shell.** WorkEasy Connect owns credentials, delivery,
+  retries and logs; HRMS records authorized connections and supported
+  event/action keys, and has no retry endpoint on purpose.
 
 ## Open items
 

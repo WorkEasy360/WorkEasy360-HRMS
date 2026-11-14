@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { ALL_NAV_ITEMS, canSee, type NavItem } from "@/lib/navigation";
+import { searchableNav, type NavItem } from "@/lib/navigation";
 import type { Employee } from "@/lib/types";
 
 type Result =
@@ -35,7 +35,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   const results: Result[] = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const pages = ALL_NAV_ITEMS.filter((i) => canSee(i, hasPermission)).filter(
+    const pages = searchableNav(hasPermission).filter(
       (i) => !q || `${i.label} ${i.description} ${i.keywords ?? ""}`.toLowerCase().includes(q),
     );
     return [
@@ -45,7 +45,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   }, [query, people, peopleQuery, hasPermission]);
 
   function go(r: Result) {
-    router.push(r.kind === "page" ? r.item.href : `/people/${r.employee.id}`);
+    router.push(r.kind === "page" ? r.item.href : `/employees/${r.employee.id}`);
     onClose();
   }
 

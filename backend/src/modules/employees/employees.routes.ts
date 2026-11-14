@@ -13,7 +13,10 @@ import { writeAuditLog } from "../../utils/audit";
 import { revokeAllForUser } from "../../utils/refreshTokens";
 import { isEmailEnabled } from "../../utils/mailer";
 import { sendPasswordResetEmail } from "../../utils/notifications";
-import { createPasswordToken, HR_RESET_TTL_MS } from "../../utils/passwordTokens";
+import { createPasswordToken, HR_RESET_TTL_MS, INVITE_TTL_MS } from "../../utils/passwordTokens";
+import { isExitEffective, revokeHrmsAccess } from "../../utils/employeeExit";
+import { sendWelcomeEmail } from "../../utils/notifications";
+import { startOfUtcDay } from "../../utils/date";
 
 const router = Router();
 router.use(requireAuth);
@@ -32,11 +35,20 @@ const optionalText = (max: number) =>
 
 // Employee Directory (People > Employee Directory)
 router.get("/", requirePermission(PERMISSIONS.EMPLOYEE_READ), async (req, res) => {
-  const { departmentId, search } = req.query as { departmentId?: string; search?: string };
+  const { departmentId, search, status } = req.query as { departmentId?: string; search?: string; status?: string };
+
+  // Directory filter (2.1.1): name, department and active/inactive.
+  const statusFilter =
+    status === "active"
+      ? { status: { not: "EXITED" as const } }
+      : status === "inactive"
+        ? { status: "EXITED" as const }
+        : {};
 
   const employees = await prisma.employee.findMany({
     where: {
       organizationId: req.user!.organizationId,
+      ...statusFilter,
       ...(departmentId ? { departmentId } : {}),
       ...(search
         ? {
@@ -257,6 +269,129 @@ router.post("/:id/reset-password", requirePermission(PERMISSIONS.EMPLOYEE_WRITE)
     return res.json({ emailSent: true, email: employee.user.email });
   }
   return res.json({ tempPassword });
+});
+
+// ─── Employee exit (2.4) ───────────────────────────────────────────────────
+
+const exitSchema = z.object({
+  lastWorkingDate: z.coerce.date(),
+  reason: z.string().trim().max(2000).optional(),
+});
+
+/**
+ * Records an exit. History is always preserved: documents, attendance, salary
+ * and payroll records are never deleted, so a final-period payslip can still be
+ * produced from the approved payroll rules (2.4.3, Payroll rule 06).
+ *
+ * HRMS access is revoked at the effective date. Leaving this employer does not
+ * delete the person's shared WorkEasy360 identity, and access to other
+ * organizations is untouched — review those separately.
+ */
+router.post("/:id/exit", requirePermission(PERMISSIONS.EMPLOYEE_EXIT_MANAGE), async (req, res) => {
+  const parsed = exitSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const organizationId = req.user!.organizationId;
+
+  const employee = await prisma.employee.findFirst({
+    where: { id: req.params.id, organizationId },
+    select: { id: true, userId: true, exitDate: true, status: true, firstName: true, lastName: true },
+  });
+  if (!employee) return res.status(404).json({ error: "Employee not found" });
+  if (employee.exitDate) return res.status(409).json({ error: "An exit has already been recorded for this employee" });
+  if (employee.userId === req.user!.sub) {
+    return res.status(400).json({ error: "You can't record your own exit. Ask another authorized admin." });
+  }
+
+  const exitDate = startOfUtcDay(parsed.data.lastWorkingDate);
+  // The record is marked, but the status only flips to EXITED when access is
+  // actually revoked, so a future-dated exit doesn't lock anyone out early.
+  await prisma.employee.update({
+    where: { id: employee.id },
+    data: {
+      exitDate,
+      exitReason: parsed.data.reason,
+      exitRecordedAt: new Date(),
+      exitRecordedById: req.user!.employeeId,
+    },
+  });
+
+  await writeAuditLog({
+    organizationId,
+    actorUserId: req.user!.sub,
+    action: "employee.exit_recorded",
+    entityType: "Employee",
+    entityId: employee.id,
+    after: { exitDate: exitDate.toISOString().slice(0, 10), reason: parsed.data.reason ?? null },
+  });
+
+  // Effective today or earlier in the organization's own time zone: revoke now.
+  // A future date is applied when it arrives, on the employee's next sign-in or
+  // token refresh.
+  const revokedNow = (await isExitEffective(organizationId, exitDate))
+    ? await revokeHrmsAccess({
+        organizationId,
+        employeeId: employee.id,
+        actorUserId: req.user!.sub,
+        reason: "Exit recorded",
+      })
+    : false;
+
+  return res.json({
+    employee: await prisma.employee.findUniqueOrThrow({
+      where: { id: employee.id },
+      include: { department: true, manager: true, user: { select: { email: true } } },
+    }),
+    accessRevoked: revokedNow,
+    note: revokedNow
+      ? "HRMS access for this organization has been revoked. Their shared WorkEasy360 identity and other product access are unchanged — review those separately."
+      : "The exit is recorded. HRMS access will be revoked on the effective date. Review other product access separately.",
+    preserved: ["documents", "attendance", "leave", "salary history", "payslips"],
+  });
+});
+
+/**
+ * Login access (2.2.3). Sends a fresh set-your-password invitation to the
+ * employee's existing account. It never creates a second login: the employee
+ * record and the shared identity stay one-to-one.
+ */
+router.post("/:id/invite", requirePermission(PERMISSIONS.EMPLOYEE_WRITE), async (req, res) => {
+  const organizationId = req.user!.organizationId;
+  const employee = await prisma.employee.findFirst({
+    where: { id: req.params.id, organizationId },
+    select: {
+      id: true,
+      userId: true,
+      firstName: true,
+      user: { select: { email: true, disabledAt: true } },
+      accessRevokedAt: true,
+    },
+  });
+  if (!employee) return res.status(404).json({ error: "Employee not found" });
+  if (employee.accessRevokedAt || employee.user.disabledAt) {
+    return res.status(409).json({ error: "This employee's HRMS access has been revoked" });
+  }
+  if (!isEmailEnabled()) {
+    return res.status(503).json({ error: "Email is not configured, so an invitation can't be sent" });
+  }
+
+  const organization = await prisma.organization.findUniqueOrThrow({ where: { id: organizationId } });
+  const token = await createPasswordToken(employee.userId, "INVITE", INVITE_TTL_MS);
+  sendWelcomeEmail({
+    to: employee.user.email,
+    firstName: employee.firstName,
+    organizationName: organization.name,
+    organizationSlug: organization.slug,
+    token,
+  });
+
+  await writeAuditLog({
+    organizationId,
+    actorUserId: req.user!.sub,
+    action: "employee.invite_sent",
+    entityType: "Employee",
+    entityId: employee.id,
+  });
+  return res.json({ inviteSent: true, email: employee.user.email });
 });
 
 export default router;

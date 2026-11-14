@@ -13,11 +13,13 @@
   --color-surface: var(--we-surface);
   --color-muted: var(--we-surface-muted);
 
-  /* Navy structure */
-  --color-navy: var(--we-primary);
-  --color-navy-hover: var(--we-primary-hover);
-  --color-on-navy: var(--we-on-primary);
-  --color-on-navy-muted: var(--we-on-primary-muted);
+  /* Deep brand green structure (sidebar, hero) */
+  --color-brand: var(--we-primary);
+  --color-brand-hover: var(--we-primary-hover);
+  --color-on-brand: var(--we-on-primary);
+  --color-on-brand-muted: var(--we-on-primary-muted);
+  --color-nav-active: var(--we-nav-active);
+  --color-on-nav-active: var(--we-on-nav-active);
 
   /* Green accent */
   --color-accent: var(--we-accent);
@@ -61,6 +63,12 @@
   --color-chart-1: var(--we-chart-1);
   --color-chart-2: var(--we-chart-2);
   --color-chart-3: var(--we-chart-3);
+  --color-chart-single: var(--we-chart-single);
+  --color-chart-present: var(--we-chart-present);
+  --color-chart-leave: var(--we-chart-leave);
+  --color-chart-absent: var(--we-chart-absent);
+  --color-chart-pending: var(--we-chart-pending);
+  --color-chart-grid: var(--we-chart-grid);
 
   /* Shape */
   --radius-sm: var(--we-radius-sm);
@@ -93,6 +101,11 @@
 
 /* `dark:` escape hatch for the few places a token cannot express, such as an
    image swap. Token-driven colour needs no variant: it flips on its own. */
+/* Short browser windows (a laptop with tabs, address bar and taskbar), so the
+   sign-in pages fit without scrolling. */
+@custom-variant short (@media (max-height: 50rem));
+@custom-variant tiny (@media (max-height: 42rem));
+
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @layer base {
@@ -123,7 +136,7 @@
   }
 
   /* Visible keyboard focus everywhere, without a ring on mouse clicks.
-     On navy regions the ring turns green (see [data-region] in tokens.css). */
+     On green regions the ring turns light green (see [data-region] in tokens.css). */
   :where(a, button, input, select, textarea, [tabindex]):focus-visible {
     outline: 2px solid var(--we-focus);
     outline-offset: 2px;

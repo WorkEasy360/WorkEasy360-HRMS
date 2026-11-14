@@ -1,7 +1,16 @@
 import { Prisma } from "@prisma/client";
 import { AssistantContext } from "../../ai/capabilities";
 import { PERMISSIONS } from "../../utils/permissions";
-import { today } from "../../utils/date";
+import { startOfUtcDay } from "../../utils/date";
+import {
+  dateKey,
+  evaluateDay,
+  isWorkingDay,
+  minutesNowInOrgTimezone,
+  todayInOrgTimezone,
+  type DayStatus,
+  type WorkSchedule,
+} from "../../utils/workSchedule";
 
 /**
  * The assistant's read-only tools. Every query is scoped by organizationId, and
@@ -80,19 +89,69 @@ function card(e: {
   };
 }
 
+/* --------------------------------------------------------- work schedule */
+
+/**
+ * The organization's work schedule, read through the same transaction client as
+ * everything else so a tool call stays one consistent snapshot.
+ */
+async function scheduleOf(tx: Tx, ctx: AssistantContext, range?: { from: Date; to: Date }): Promise<WorkSchedule> {
+  const [org, holidays] = await Promise.all([
+    tx.organization.findUnique({
+      where: { id: ctx.organizationId },
+      select: { timezone: true, workingDays: true, workStartTime: true, workEndTime: true, fullDayHours: true },
+    }),
+    tx.holiday.findMany({
+      where: {
+        organizationId: ctx.organizationId,
+        ...(range ? { date: { gte: startOfUtcDay(range.from), lte: startOfUtcDay(range.to) } } : {}),
+      },
+      select: { date: true, name: true },
+    }),
+  ]);
+  return {
+    timezone: org?.timezone ?? "Asia/Kolkata",
+    workingDays: org?.workingDays?.length ? org.workingDays : [1, 2, 3, 4, 5],
+    workStartTime: org?.workStartTime ?? "09:00",
+    workEndTime: org?.workEndTime ?? "18:00",
+    fullDayHours: org?.fullDayHours ?? 8,
+    holidays: new Map(holidays.map((h) => [dateKey(h.date), h.name])),
+  };
+}
+
+function leaveDays(leaves: { startDate: Date; endDate: Date }[]): Set<string> {
+  const set = new Set<string>();
+  for (const l of leaves) {
+    for (let d = startOfUtcDay(l.startDate); d <= startOfUtcDay(l.endDate); d = new Date(d.getTime() + 86_400_000)) {
+      set.add(dateKey(d));
+    }
+  }
+  return set;
+}
+
 /* ------------------------------------------------------------------ tools */
 
 export const TOOLS: Record<string, ToolRun> = {
   async company_overview(tx, _args, ctx) {
     const canSeePeople = ctx.permissions.includes(PERMISSIONS.EMPLOYEE_READ);
-    const [headcount, pendingLeave, myOpenTickets] = await Promise.all([
-      canSeePeople ? tx.employee.count({ where: { organizationId: ctx.organizationId, status: "ACTIVE" } }) : Promise.resolve(null),
+    const [headcount, pendingLeave, pendingCorrections, myOpenTickets] = await Promise.all([
+      canSeePeople
+        ? tx.employee.count({ where: { organizationId: ctx.organizationId, status: "ACTIVE" } })
+        : Promise.resolve(null),
       tx.leaveRequest.count({ where: { organizationId: ctx.organizationId, status: "PENDING" } }),
+      tx.attendanceCorrectionRequest.count({ where: { organizationId: ctx.organizationId, status: "PENDING" } }),
       ctx.employeeId
-        ? tx.helpDeskTicket.count({ where: { organizationId: ctx.organizationId, employeeId: ctx.employeeId, status: { in: ["OPEN", "IN_PROGRESS"] } } })
+        ? tx.helpDeskTicket.count({
+            where: {
+              organizationId: ctx.organizationId,
+              employeeId: ctx.employeeId,
+              status: { in: ["OPEN", "IN_PROGRESS", "WAITING"] },
+            },
+          })
         : Promise.resolve(null),
     ]);
 
+    const canSeeCompanyQueue = canSeePeople || ctx.permissions.includes(PERMISSIONS.LEAVE_MANAGE);
     return {
       company: ctx.organizationName,
       today: ctx.today,
@@ -100,7 +159,8 @@ export const TOOLS: Record<string, ToolRun> = {
       currency: ctx.currency,
       member: { name: ctx.memberName, roles: ctx.roles, hasEmployeeRecord: !!ctx.employeeId },
       activeEmployees: headcount,
-      pendingLeaveRequestsInCompany: canSeePeople || ctx.permissions.includes(PERMISSIONS.LEAVE_MANAGE) ? pendingLeave : null,
+      pendingLeaveRequestsInCompany: canSeeCompanyQueue ? pendingLeave : null,
+      pendingCorrectionsInCompany: canSeeCompanyQueue ? pendingCorrections : null,
       myOpenTickets,
     };
   },
@@ -119,7 +179,16 @@ export const TOOLS: Record<string, ToolRun> = {
     const [requests, balances] = await Promise.all([
       tx.leaveRequest.findMany({
         where: { organizationId: ctx.organizationId, employeeId: self(ctx), ...(status ? { status } : {}) },
-        select: { id: true, startDate: true, endDate: true, days: true, status: true, reason: true, leaveType: { select: { name: true } } },
+        select: {
+          id: true,
+          startDate: true,
+          endDate: true,
+          days: true,
+          status: true,
+          reason: true,
+          routingNote: true,
+          leaveType: { select: { name: true, paid: true } },
+        },
         orderBy: { startDate: "desc" },
         take: limit(args),
       }),
@@ -139,11 +208,14 @@ export const TOOLS: Record<string, ToolRun> = {
       requests: requests.map((r) => ({
         id: r.id,
         leaveType: r.leaveType.name,
+        paid: r.leaveType.paid,
         from: iso(r.startDate),
         to: iso(r.endDate),
         days: r.days,
         status: r.status,
         reason: r.reason,
+        // Set when nobody can approve it yet: an admin has to fix the setup.
+        routingProblem: r.routingNote,
       })),
     };
   },
@@ -151,15 +223,55 @@ export const TOOLS: Record<string, ToolRun> = {
   async my_attendance(tx, _args, ctx) {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const [todayRecord, month] = await Promise.all([
-      tx.attendanceRecord.findFirst({ where: { organizationId: ctx.organizationId, employeeId: self(ctx), date: today() } }),
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+    const schedule = await scheduleOf(tx, ctx, { from: monthStart, to: monthEnd });
+    const todayDate = todayInOrgTimezone(schedule);
+
+    const [records, leaves] = await Promise.all([
       tx.attendanceRecord.findMany({
-        where: { organizationId: ctx.organizationId, employeeId: self(ctx), date: { gte: monthStart } },
+        where: { organizationId: ctx.organizationId, employeeId: self(ctx), date: { gte: monthStart, lte: monthEnd } },
         select: { date: true, checkInAt: true, checkOutAt: true },
+      }),
+      tx.leaveRequest.findMany({
+        where: {
+          organizationId: ctx.organizationId,
+          employeeId: self(ctx),
+          status: "APPROVED",
+          startDate: { lte: monthEnd },
+          endDate: { gte: monthStart },
+        },
+        select: { startDate: true, endDate: true },
       }),
     ]);
 
-    const hours = month.reduce((sum, r) => {
+    const todayRecord = records.find((r) => dateKey(r.date) === dateKey(todayDate)) ?? null;
+    const checkedIn = new Set(records.filter((r) => r.checkInAt).map((r) => dateKey(r.date)));
+    const onLeave = leaveDays(leaves);
+    const nowMinutes = minutesNowInOrgTimezone(schedule);
+
+    const counts: Record<DayStatus, number> = {
+      HOLIDAY: 0,
+      WEEKLY_OFF: 0,
+      ON_LEAVE: 0,
+      PRESENT: 0,
+      NOT_CHECKED_IN: 0,
+      ABSENT: 0,
+    };
+    for (let d = monthStart; d <= monthEnd; d = new Date(d.getTime() + 86_400_000)) {
+      const key = dateKey(d);
+      counts[
+        evaluateDay({
+          date: d,
+          schedule,
+          hasCheckIn: checkedIn.has(key),
+          onApprovedLeave: onLeave.has(key),
+          today: todayDate,
+          nowMinutes,
+        })
+      ] += 1;
+    }
+
+    const hours = records.reduce((sum, r) => {
       if (!r.checkInAt || !r.checkOutAt) return sum;
       return sum + (r.checkOutAt.getTime() - r.checkInAt.getTime()) / 3_600_000;
     }, 0);
@@ -167,129 +279,162 @@ export const TOOLS: Record<string, ToolRun> = {
     return {
       today: {
         date: ctx.today,
+        isWorkingDay: isWorkingDay(todayDate, schedule),
+        holiday: schedule.holidays.get(dateKey(todayDate)) ?? null,
         checkedIn: !!todayRecord?.checkInAt,
         checkedOut: !!todayRecord?.checkOutAt,
         checkInAt: todayRecord?.checkInAt?.toISOString() ?? null,
         checkOutAt: todayRecord?.checkOutAt?.toISOString() ?? null,
       },
-      thisMonth: { daysPresent: month.filter((r) => r.checkInAt).length, hours: Math.round(hours * 10) / 10 },
+      // Not checked in is counted separately from absent: a working day is only
+      // absent once it has finished.
+      thisMonth: { ...counts, hours: Math.round(hours * 10) / 10 },
     };
   },
 
-  async my_timesheets(tx, args, ctx) {
-    const entries = await tx.timesheetEntry.findMany({
+  async my_corrections(tx, args, ctx) {
+    const rows = await tx.attendanceCorrectionRequest.findMany({
       where: { organizationId: ctx.organizationId, employeeId: self(ctx) },
-      select: { id: true, date: true, hours: true, task: true, status: true },
+      select: {
+        id: true,
+        date: true,
+        requestedCheckInAt: true,
+        requestedCheckOutAt: true,
+        reason: true,
+        status: true,
+        decisionNote: true,
+        routingNote: true,
+      },
       orderBy: { date: "desc" },
       take: limit(args),
     });
-    return entries.map((e) => ({ id: e.id, date: iso(e.date), hours: e.hours, task: e.task, status: e.status }));
-  },
-
-  async my_expenses(tx, args, ctx) {
-    const claims = await tx.expenseClaim.findMany({
-      where: { organizationId: ctx.organizationId, employeeId: self(ctx) },
-      select: { id: true, category: true, amount: true, currency: true, expenseDate: true, status: true, description: true },
-      orderBy: { expenseDate: "desc" },
-      take: limit(args),
-    });
-    return claims.map((c) => ({ ...c, expenseDate: iso(c.expenseDate) }));
-  },
-
-  async my_loans(tx, _args, ctx) {
-    const loans = await tx.loanRequest.findMany({
-      where: { organizationId: ctx.organizationId, employeeId: self(ctx) },
-      select: { id: true, amount: true, emiMonths: true, monthlyDeduction: true, remainingAmount: true, status: true, reason: true },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
-    return loans;
+    return rows.map((r) => ({
+      id: r.id,
+      date: iso(r.date),
+      requestedCheckInAt: r.requestedCheckInAt?.toISOString() ?? null,
+      requestedCheckOutAt: r.requestedCheckOutAt?.toISOString() ?? null,
+      reason: r.reason,
+      status: r.status,
+      decisionNote: r.decisionNote,
+      routingProblem: r.routingNote,
+    }));
   },
 
   async my_payslips(tx, args, ctx) {
+    // Only published, current revisions: a draft is not a payslip.
     const payslips = await tx.payslip.findMany({
-      where: { organizationId: ctx.organizationId, employeeId: self(ctx) },
-      select: { id: true, grossPay: true, deductions: true, netPay: true, payrollRun: { select: { month: true, year: true, status: true } } },
+      where: {
+        organizationId: ctx.organizationId,
+        employeeId: self(ctx),
+        publishedAt: { not: null },
+        supersededAt: null,
+      },
+      select: {
+        id: true,
+        grossPay: true,
+        deductions: true,
+        netPay: true,
+        paidDays: true,
+        payableDays: true,
+        revisionNumber: true,
+        payrollRun: { select: { month: true, year: true, status: true } },
+      },
       orderBy: [{ payrollRun: { year: "desc" } }, { payrollRun: { month: "desc" } }],
       take: limit(args, 6, 12),
     });
     return payslips.map((p) => ({
       id: p.id,
       period: `${p.payrollRun.year}-${String(p.payrollRun.month).padStart(2, "0")}`,
-      status: p.payrollRun.status,
       gross: p.grossPay,
       deductions: p.deductions,
       net: p.netPay,
+      paidDays: p.paidDays,
+      payableDays: p.payableDays,
+      revision: p.revisionNumber,
+      note: "Published means the payslip is available to read. It does not mean the salary has been paid.",
     }));
-  },
-
-  async my_goals(tx, _args, ctx) {
-    const goals = await tx.goal.findMany({
-      where: { organizationId: ctx.organizationId, employeeId: self(ctx) },
-      select: { id: true, title: true, status: true, progress: true, dueDate: true },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    });
-    return goals.map((g) => ({ ...g, dueDate: iso(g.dueDate) }));
   },
 
   async my_onboarding_tasks(tx, _args, ctx) {
     const tasks = await tx.onboardingTask.findMany({
       where: { organizationId: ctx.organizationId, employeeId: self(ctx) },
-      select: { id: true, title: true, done: true, dueDate: true },
+      select: { id: true, title: true, done: true, dueDate: true, requiresVerification: true, verifiedAt: true },
       orderBy: [{ done: "asc" }, { dueDate: "asc" }],
       take: 20,
     });
-    return tasks.map((t) => ({ ...t, dueDate: iso(t.dueDate) }));
+    return tasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      done: t.done,
+      dueDate: iso(t.dueDate),
+      needsHrCheck: t.requiresVerification,
+      verified: !!t.verifiedAt,
+    }));
   },
 
-  async my_assets(tx, _args, ctx) {
-    return tx.asset.findMany({
-      where: { organizationId: ctx.organizationId, assignedToId: self(ctx) },
-      select: { id: true, name: true, category: true, serialNumber: true, status: true, assignedAt: true },
-      take: 20,
-    });
+  async work_schedule(tx, _args, ctx) {
+    const year = new Date().getUTCFullYear();
+    const [schedule, leaveTypes] = await Promise.all([
+      scheduleOf(tx, ctx, { from: new Date(Date.UTC(year, 0, 1)), to: new Date(Date.UTC(year, 11, 31)) }),
+      tx.leaveType.findMany({
+        where: { organizationId: ctx.organizationId },
+        select: { id: true, name: true, defaultDaysPerYear: true, paid: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
+    const names = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    return {
+      timeZone: schedule.timezone,
+      workingDays: schedule.workingDays.map((d) => names[d]),
+      hours: `${schedule.workStartTime} to ${schedule.workEndTime}`,
+      fullDayHours: schedule.fullDayHours,
+      holidays: [...schedule.holidays.entries()]
+        .map(([date, name]) => ({ date, name }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      leaveTypes,
+    };
   },
 
   async pending_approvals(tx, args, ctx) {
-    const kind = oneOf(args.kind, ["leave", "timesheet", "expense", "loan"] as const);
+    const kind = oneOf(args.kind, ["leave", "correction"] as const);
     const take = limit(args);
     const org = ctx.organizationId;
-    // HR-style permissions see the whole company; everyone else sees their own reports.
-    const mine = (perm: string) =>
-      ctx.permissions.includes(perm) ? {} : { employee: { managerId: ctx.employeeId ?? "__no_employee__" } };
+    const me = ctx.employeeId ?? "__no_employee__";
+
+    // Authorized HR see the company; a manager sees their own direct reports.
+    // Either way, never the member's own request: nobody approves themselves.
+    const scope = (managePermission: string) =>
+      ctx.permissions.includes(managePermission) ? { employee: { id: { not: me } } } : { employee: { managerId: me } };
 
     const want = (k: string) => !kind || kind === k;
 
-    const [leave, timesheets, expenses, loans] = await Promise.all([
+    const [leave, corrections] = await Promise.all([
       want("leave")
         ? tx.leaveRequest.findMany({
-            where: { organizationId: org, status: "PENDING", ...mine(PERMISSIONS.LEAVE_MANAGE) },
-            select: { id: true, startDate: true, endDate: true, days: true, leaveType: { select: { name: true } }, employee: { select: EMPLOYEE_CARD } },
+            where: { organizationId: org, status: "PENDING", ...scope(PERMISSIONS.LEAVE_MANAGE) },
+            select: {
+              id: true,
+              startDate: true,
+              endDate: true,
+              days: true,
+              leaveType: { select: { name: true } },
+              employee: { select: EMPLOYEE_CARD },
+            },
             orderBy: { createdAt: "asc" },
             take,
           })
         : [],
-      want("timesheet")
-        ? tx.timesheetEntry.findMany({
-            where: { organizationId: org, status: "PENDING", ...mine(PERMISSIONS.TIMESHEET_MANAGE) },
-            select: { id: true, date: true, hours: true, task: true, employee: { select: EMPLOYEE_CARD } },
-            orderBy: { date: "asc" },
-            take,
-          })
-        : [],
-      want("expense")
-        ? tx.expenseClaim.findMany({
-            where: { organizationId: org, status: "PENDING", ...mine(PERMISSIONS.EXPENSE_MANAGE) },
-            select: { id: true, category: true, amount: true, expenseDate: true, employee: { select: EMPLOYEE_CARD } },
-            orderBy: { createdAt: "asc" },
-            take,
-          })
-        : [],
-      want("loan")
-        ? tx.loanRequest.findMany({
-            where: { organizationId: org, status: "PENDING", ...mine(PERMISSIONS.LOAN_MANAGE) },
-            select: { id: true, amount: true, emiMonths: true, employee: { select: EMPLOYEE_CARD } },
+      want("correction")
+        ? tx.attendanceCorrectionRequest.findMany({
+            where: { organizationId: org, status: "PENDING", ...scope(PERMISSIONS.ATTENDANCE_MANAGE) },
+            select: {
+              id: true,
+              date: true,
+              requestedCheckInAt: true,
+              requestedCheckOutAt: true,
+              reason: true,
+              employee: { select: EMPLOYEE_CARD },
+            },
             orderBy: { createdAt: "asc" },
             take,
           })
@@ -297,40 +442,65 @@ export const TOOLS: Record<string, ToolRun> = {
     ]);
 
     return {
-      counts: { leave: leave.length, timesheet: timesheets.length, expense: expenses.length, loan: loans.length },
-      leave: leave.map((r) => ({ id: r.id, who: card(r.employee).name, leaveType: r.leaveType.name, from: iso(r.startDate), to: iso(r.endDate), days: r.days })),
-      timesheets: timesheets.map((t) => ({ id: t.id, who: card(t.employee).name, date: iso(t.date), hours: t.hours, task: t.task })),
-      expenses: expenses.map((e) => ({ id: e.id, who: card(e.employee).name, category: e.category, amount: e.amount, date: iso(e.expenseDate) })),
-      loans: loans.map((l) => ({ id: l.id, who: card(l.employee).name, amount: l.amount, emiMonths: l.emiMonths })),
+      counts: { leave: leave.length, correction: corrections.length },
+      leave: leave.map((r) => ({
+        id: r.id,
+        who: card(r.employee).name,
+        leaveType: r.leaveType.name,
+        from: iso(r.startDate),
+        to: iso(r.endDate),
+        days: r.days,
+      })),
+      corrections: corrections.map((c) => ({
+        id: c.id,
+        who: card(c.employee).name,
+        date: iso(c.date),
+        requestedCheckInAt: c.requestedCheckInAt?.toISOString() ?? null,
+        requestedCheckOutAt: c.requestedCheckOutAt?.toISOString() ?? null,
+        reason: c.reason,
+      })),
     };
   },
 
-  async leave_types(tx, _args, ctx) {
-    return tx.leaveType.findMany({
-      where: { organizationId: ctx.organizationId },
-      select: { id: true, name: true, defaultDaysPerYear: true },
-      orderBy: { name: "asc" },
-    });
-  },
-
-  async hr_guide_search(tx, args, ctx) {
+  async policy_search(tx, args, ctx) {
     const query = text(args.query);
-    const articles = await tx.hrGuideArticle.findMany({
+    // Published policies only, and only this organization's.
+    const policies = await tx.hrPolicy.findMany({
       where: {
         organizationId: ctx.organizationId,
-        ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { body: { contains: query, mode: "insensitive" } }] } : {}),
+        publishedAt: { not: null },
+        ...(query
+          ? {
+              OR: [
+                { title: { contains: query, mode: "insensitive" } },
+                { body: { contains: query, mode: "insensitive" } },
+              ],
+            }
+          : {}),
       },
-      select: { id: true, title: true, body: true, category: true },
+      select: { id: true, title: true, body: true, category: true, publishedAt: true },
       orderBy: { title: "asc" },
       take: limit(args, 5, 10),
     });
-    return articles.map((a) => ({ id: a.id, title: a.title, category: a.category, extract: a.body.slice(0, 800) }));
+    return policies.map((a) => ({
+      id: a.id,
+      title: a.title,
+      category: a.category,
+      extract: a.body.slice(0, 800),
+      publishedAt: a.publishedAt?.toISOString() ?? null,
+    }));
   },
 
   async recent_announcements(tx, args, ctx) {
     const items = await tx.announcement.findMany({
       where: { organizationId: ctx.organizationId },
-      select: { id: true, title: true, body: true, publishedAt: true, author: { select: { firstName: true, lastName: true } } },
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        publishedAt: true,
+        author: { select: { firstName: true, lastName: true } },
+      },
       orderBy: { publishedAt: "desc" },
       take: limit(args, 5, 10),
     });
@@ -344,23 +514,40 @@ export const TOOLS: Record<string, ToolRun> = {
   },
 
   async helpdesk_tickets(tx, args, ctx) {
-    const canManage = ctx.permissions.includes(PERMISSIONS.HELPDESK_MANAGE);
+    // Agent queues only, and only the ones this member is authorized for.
+    const queues: ("HR" | "PAYROLL" | "PRODUCT")[] = [];
+    if (ctx.permissions.includes(PERMISSIONS.HELPDESK_MANAGE)) queues.push("HR", "PRODUCT");
+    if (ctx.permissions.includes(PERMISSIONS.HELPDESK_PAYROLL_QUEUE)) queues.push("PAYROLL");
+
     const scope = oneOf(args.scope, ["mine", "all"] as const) ?? "mine";
-    const status = oneOf(args.status, ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"] as const);
+    const status = oneOf(args.status, ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"] as const);
+    const asAgent = scope === "all" && queues.length > 0;
+
     const tickets = await tx.helpDeskTicket.findMany({
       where: {
         organizationId: ctx.organizationId,
-        ...(scope === "all" && canManage ? {} : { employeeId: self(ctx) }),
+        ...(asAgent ? { queue: { in: queues } } : { employeeId: self(ctx) }),
         ...(status ? { status } : {}),
       },
-      select: { id: true, category: true, subject: true, status: true, createdAt: true, employee: { select: { firstName: true, lastName: true } } },
-      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        reference: true,
+        type: true,
+        queue: true,
+        subject: true,
+        status: true,
+        createdAt: true,
+        employee: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { updatedAt: "desc" },
       take: limit(args),
     });
     return tickets.map((t) => ({
       id: t.id,
+      reference: t.reference,
       subject: t.subject,
-      category: t.category,
+      type: t.type,
+      queue: t.queue,
       status: t.status,
       raisedBy: `${t.employee.firstName} ${t.employee.lastName}`,
       createdAt: t.createdAt.toISOString(),
@@ -400,7 +587,12 @@ export const TOOLS: Record<string, ToolRun> = {
     if (!id) return null;
     const person = await tx.employee.findFirst({
       where: { id, organizationId: ctx.organizationId },
-      select: { ...EMPLOYEE_CARD, dateOfJoining: true, exitDate: true, directReports: { select: { id: true, firstName: true, lastName: true } } },
+      select: {
+        ...EMPLOYEE_CARD,
+        dateOfJoining: true,
+        exitDate: true,
+        directReports: { select: { id: true, firstName: true, lastName: true } },
+      },
     });
     if (!person) return null;
     return {
@@ -411,43 +603,111 @@ export const TOOLS: Record<string, ToolRun> = {
     };
   },
 
-  async headcount_report(tx, _args, ctx) {
-    const [byStatus, byDepartment, total] = await Promise.all([
-      tx.employee.groupBy({ by: ["status"], where: { organizationId: ctx.organizationId }, _count: { _all: true } }),
-      tx.department.findMany({
-        where: { organizationId: ctx.organizationId },
-        select: { name: true, _count: { select: { employees: true } } },
-        orderBy: { name: "asc" },
+  async attendance_today(tx, _args, ctx) {
+    const schedule = await scheduleOf(tx, ctx);
+    const date = todayInOrgTimezone(schedule);
+    const daySchedule = await scheduleOf(tx, ctx, { from: date, to: date });
+
+    const [employees, records, leaves] = await Promise.all([
+      tx.employee.findMany({
+        where: {
+          organizationId: ctx.organizationId,
+          status: { not: "EXITED" },
+          OR: [{ dateOfJoining: null }, { dateOfJoining: { lte: date } }],
+        },
+        select: { id: true },
       }),
-      tx.employee.count({ where: { organizationId: ctx.organizationId } }),
+      tx.attendanceRecord.findMany({
+        where: { organizationId: ctx.organizationId, date },
+        select: { employeeId: true, checkInAt: true },
+      }),
+      tx.leaveRequest.findMany({
+        where: { organizationId: ctx.organizationId, status: "APPROVED", startDate: { lte: date }, endDate: { gte: date } },
+        select: { employeeId: true },
+      }),
     ]);
+
+    const checkedIn = new Set(records.filter((r) => r.checkInAt).map((r) => r.employeeId));
+    const onLeave = new Set(leaves.map((l) => l.employeeId));
+    const nowMinutes = minutesNowInOrgTimezone(daySchedule);
+
+    const counts: Record<DayStatus, number> = {
+      HOLIDAY: 0,
+      WEEKLY_OFF: 0,
+      ON_LEAVE: 0,
+      PRESENT: 0,
+      NOT_CHECKED_IN: 0,
+      ABSENT: 0,
+    };
+    for (const e of employees) {
+      counts[
+        evaluateDay({
+          date,
+          schedule: daySchedule,
+          hasCheckIn: checkedIn.has(e.id),
+          onApprovedLeave: onLeave.has(e.id),
+          today: date,
+          nowMinutes,
+        })
+      ] += 1;
+    }
+
     return {
-      total,
-      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count._all })),
-      byDepartment: byDepartment.map((d) => ({ department: d.name, count: d._count.employees })),
+      date: dateKey(date),
+      isWorkingDay: isWorkingDay(date, daySchedule),
+      holiday: daySchedule.holidays.get(dateKey(date)) ?? null,
+      employees: employees.length,
+      present: counts.PRESENT,
+      onLeave: counts.ON_LEAVE,
+      notYetCheckedIn: counts.NOT_CHECKED_IN,
+      absent: counts.ABSENT,
+      weeklyOff: counts.WEEKLY_OFF,
     };
   },
 
-  async recruitment_overview(tx, args, ctx) {
+  async hiring_overview(tx, args, ctx) {
     const [postings, stages] = await Promise.all([
       tx.jobPosting.findMany({
         where: { organizationId: ctx.organizationId },
-        select: { id: true, title: true, status: true, department: { select: { name: true } }, _count: { select: { candidates: true } } },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          location: true,
+          workMode: true,
+          department: { select: { name: true } },
+          _count: { select: { applications: true } },
+        },
         orderBy: { createdAt: "desc" },
         take: limit(args),
       }),
-      tx.candidate.groupBy({ by: ["stage"], where: { organizationId: ctx.organizationId }, _count: { _all: true } }),
+      tx.jobApplication.groupBy({ by: ["stage"], where: { organizationId: ctx.organizationId }, _count: { _all: true } }),
     ]);
     return {
-      postings: postings.map((p) => ({ id: p.id, title: p.title, status: p.status, department: p.department?.name ?? null, candidates: p._count.candidates })),
-      candidatesByStage: stages.map((s) => ({ stage: s.stage, count: s._count._all })),
+      openings: postings.map((p) => ({
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        location: p.location,
+        workMode: p.workMode,
+        department: p.department?.name ?? null,
+        applications: p._count.applications,
+      })),
+      applicationsByStage: stages.map((s) => ({ stage: s.stage, count: s._count._all })),
     };
   },
 
   async payroll_overview(tx, args, ctx) {
     const runs = await tx.payrollRun.findMany({
       where: { organizationId: ctx.organizationId },
-      select: { id: true, month: true, year: true, status: true, processedAt: true, _count: { select: { payslips: true } } },
+      select: {
+        id: true,
+        month: true,
+        year: true,
+        status: true,
+        finalizedAt: true,
+        _count: { select: { payslips: true } },
+      },
       orderBy: [{ year: "desc" }, { month: "desc" }],
       take: limit(args, 6, 12),
     });
@@ -456,18 +716,7 @@ export const TOOLS: Record<string, ToolRun> = {
       period: `${r.year}-${String(r.month).padStart(2, "0")}`,
       status: r.status,
       payslips: r._count.payslips,
-      processedAt: r.processedAt?.toISOString() ?? null,
+      finalizedAt: r.finalizedAt?.toISOString() ?? null,
     }));
-  },
-
-  async asset_inventory(tx, _args, ctx) {
-    const [byStatus, byCategory] = await Promise.all([
-      tx.asset.groupBy({ by: ["status"], where: { organizationId: ctx.organizationId }, _count: { _all: true } }),
-      tx.asset.groupBy({ by: ["category"], where: { organizationId: ctx.organizationId }, _count: { _all: true } }),
-    ]);
-    return {
-      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count._all })),
-      byCategory: byCategory.map((c) => ({ category: c.category, count: c._count._all })),
-    };
   },
 };
