@@ -6,6 +6,12 @@ export interface AccessTokenPayload {
   employeeId: string | null;
   roles: string[];
   permissions: string[];
+  /**
+   * The session (refresh-token family) the token belongs to. Every request checks that the
+   * session is still open (middleware/auth.ts), so ending it ends this token at once. Absent
+   * only in tokens issued before sessions were recorded; those are refused and renewed.
+   */
+  fam?: string;
 }
 
 function requireSecret(name: string): string {
@@ -23,7 +29,7 @@ const REFRESH_SECRET = requireSecret("JWT_REFRESH_SECRET");
 // (e.g. an MFA challenge token used as an access token).
 const AUD = { access: "access", refresh: "refresh", mfa: "mfa" } as const;
 
-export function signAccessToken(payload: AccessTokenPayload): string {
+export function signAccessToken(payload: AccessTokenPayload & { fam: string }): string {
   return jwt.sign(payload, ACCESS_SECRET, { expiresIn: "15m", audience: AUD.access });
 }
 
@@ -32,6 +38,7 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   if (typeof payload.sub !== "string" || typeof payload.organizationId !== "string" || !Array.isArray(payload.permissions)) {
     throw new Error("Malformed access token");
   }
+  if (payload.fam !== undefined && typeof payload.fam !== "string") throw new Error("Malformed access token");
   return payload as AccessTokenPayload;
 }
 

@@ -11,6 +11,7 @@ import { PERMISSIONS } from "../../utils/permissions";
 import { assertInOrg } from "../../utils/tenant";
 import { writeAuditLog } from "../../utils/audit";
 import { revokeAllForUser } from "../../utils/refreshTokens";
+import { workeasy360 } from "../../workeasy360/settings";
 import { isEmailEnabled } from "../../utils/mailer";
 import { sendPasswordResetEmail } from "../../utils/notifications";
 import { createPasswordToken, HR_RESET_TTL_MS, INVITE_TTL_MS } from "../../utils/passwordTokens";
@@ -234,6 +235,9 @@ async function assertNoManagerCycle(employeeId: string, managerId: string, organ
 // signed out everywhere and any lockout is cleared. With email configured they get a
 // reset link (nothing is shown to HR); otherwise HR gets a one-time temporary password.
 router.post("/:id/reset-password", requirePermission(PERMISSIONS.EMPLOYEE_WRITE), async (req, res) => {
+  if (workeasy360.ssoOnly) {
+    return res.status(409).json({ error: "Password sign-in is turned off: this employee signs in with WorkEasy360 using their work email." });
+  }
   const employee = await prisma.employee.findFirst({
     where: { id: req.params.id, organizationId: req.user!.organizationId },
     select: { id: true, userId: true, firstName: true, user: { select: { email: true } } },
@@ -355,6 +359,9 @@ router.post("/:id/exit", requirePermission(PERMISSIONS.EMPLOYEE_EXIT_MANAGE), as
  * record and the shared identity stay one-to-one.
  */
 router.post("/:id/invite", requirePermission(PERMISSIONS.EMPLOYEE_WRITE), async (req, res) => {
+  if (workeasy360.ssoOnly) {
+    return res.status(409).json({ error: "Password sign-in is turned off: this employee signs in with WorkEasy360 using their work email." });
+  }
   const organizationId = req.user!.organizationId;
   const employee = await prisma.employee.findFirst({
     where: { id: req.params.id, organizationId },

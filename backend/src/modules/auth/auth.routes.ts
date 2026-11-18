@@ -1,26 +1,23 @@
 import bcrypt from "bcryptjs";
-import { Router } from "express";
+import { NextFunction, Request, Response, Router } from "express";
 import { generateSecret as generateTotpSecret, generateURI as generateTotpURI, verify as verifyTotp } from "otplib";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
+import { openSession } from "../../auth/sessions";
+import { clearSessionCookie, readSessionCookie, setSessionCookie, wantsCookieSession } from "../../auth/sessionCookie";
 import { requireAuth } from "../../middleware/auth";
 import { HttpError } from "../../utils/HttpError";
 import { enforceDueExit } from "../../utils/employeeExit";
 import { loadUserContext } from "../../utils/loadUserContext";
-import { signAccessToken, signMfaToken, verifyMfaToken } from "../../utils/jwt";
-import { SYSTEM_ROLES } from "../../utils/permissions";
-import { issueRefreshToken, revokeAllForUser, revokeRefreshToken, rotateRefreshToken } from "../../utils/refreshTokens";
+import { signAccessToken, signMfaToken, verifyAccessToken, verifyMfaToken } from "../../utils/jwt";
+import { createOrganizationWithAdmin } from "../../utils/organizationSetup";
+import { issueRefreshToken, revokeAllForUser, revokeFamily, revokeRefreshToken, rotateRefreshToken } from "../../utils/refreshTokens";
+import { workeasy360 } from "../../workeasy360/settings";
 import { isEmailEnabled } from "../../utils/mailer";
 import { sendPasswordResetEmail } from "../../utils/notifications";
 import { consumePasswordToken, createPasswordToken, findValidPasswordToken, RESET_TTL_MS } from "../../utils/passwordTokens";
 
 const router = Router();
-
-const DEFAULT_LEAVE_TYPES = [
-  { name: "Casual Leave", defaultDaysPerYear: 12 },
-  { name: "Sick Leave", defaultDaysPerYear: 8 },
-  { name: "Earned Leave", defaultDaysPerYear: 15 },
-];
 
 export const BCRYPT_COST = 12;
 const MAX_FAILED_ATTEMPTS = 5;
@@ -67,13 +64,38 @@ async function clearFailedAttempts(userId: string) {
   await prisma.user.update({ where: { id: userId }, data: { failedLoginCount: 0, lockedUntil: null } });
 }
 
-/** Issues a fresh access + refresh token pair for a fully authenticated user. */
+/** Opens a password session for a fully authenticated user and issues its access + refresh tokens. */
 async function issueSession(userId: string) {
   const { user, roles, permissions, employeeId } = await loadUserContext(userId);
-  const accessToken = signAccessToken({ sub: user.id, organizationId: user.organizationId, employeeId, roles, permissions });
-  const refreshToken = await issueRefreshToken(user.id);
+  const fam = await openSession(user.id, user.organizationId, { method: "PASSWORD" });
+  const accessToken = signAccessToken({ sub: user.id, organizationId: user.organizationId, employeeId, roles, permissions, fam });
+  const refreshToken = await issueRefreshToken(user.id, fam);
   return { accessToken, refreshToken };
 }
+
+/**
+ * With WORKEASY360_SSO_ONLY=true, WorkEasy360 is the only way in: password sign-in,
+ * registration, resets and password changes are refused. Off (the default), they work as
+ * before, so existing customers are never locked out.
+ */
+function passwordSignInAllowed(_req: Request, res: Response, next: NextFunction) {
+  if (workeasy360.ssoOnly) {
+    return res.status(403).json({
+      error: "Password sign-in is turned off. Sign in with WorkEasy360.",
+      code: "PASSWORD_SIGN_IN_DISABLED",
+    });
+  }
+  next();
+}
+
+/** An account created by a WorkEasy360 sign-in has no password: it can never match one. */
+function comparePassword(password: string, hash: string | null): Promise<boolean> {
+  if (!hash) return bcrypt.compare(password, DUMMY_HASH).then(() => false);
+  return bcrypt.compare(password, hash);
+}
+
+const NO_PASSWORD =
+  "Your account signs in with WorkEasy360 and has no HRMS password. Manage your password and two-step verification in WorkEasy360.";
 
 /** Accepts a TOTP code at most once: codes from an already-used time step are rejected. */
 async function verifyTotpOnce(user: { id: string; totpSecret: string | null; lastTotpStep: number | null }, token: string) {
@@ -110,7 +132,7 @@ const registerSchema = z.object({
 // Set ALLOW_PUBLIC_REGISTRATION=false once your organization exists, so nobody else can create one.
 const registrationOpen = () => process.env.ALLOW_PUBLIC_REGISTRATION !== "false";
 
-router.post("/register", async (req, res) => {
+router.post("/register", passwordSignInAllowed, async (req, res) => {
   if (!registrationOpen()) {
     return res.status(403).json({ error: "New organizations can't be created here. Ask your administrator for an account." });
   }
@@ -127,50 +149,9 @@ router.post("/register", async (req, res) => {
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
 
-  const result = await prisma.$transaction(async (tx) => {
-    const organization = await tx.organization.create({
-      data: { name: organizationName, slug: organizationSlug },
-    });
-
-    const roleMap = new Map<string, string>();
-    for (const [roleName, permissionKeys] of Object.entries(SYSTEM_ROLES)) {
-      const role = await tx.role.create({
-        data: { organizationId: organization.id, name: roleName, isSystem: true },
-      });
-      roleMap.set(roleName, role.id);
-
-      const permissions = await tx.permission.findMany({ where: { key: { in: permissionKeys } } });
-      await tx.rolePermission.createMany({
-        data: permissions.map((p) => ({ roleId: role.id, permissionId: p.id })),
-      });
-    }
-
-    const user = await tx.user.create({
-      data: { organizationId: organization.id, email, passwordHash },
-    });
-
-    await tx.userRole.create({
-      data: { userId: user.id, roleId: roleMap.get("Admin")! },
-    });
-
-    const employee = await tx.employee.create({
-      data: {
-        organizationId: organization.id,
-        userId: user.id,
-        employeeCode: "EMP-0001",
-        firstName,
-        lastName,
-        status: "ACTIVE",
-        dateOfJoining: new Date(),
-      },
-    });
-
-    await tx.leaveType.createMany({
-      data: DEFAULT_LEAVE_TYPES.map((lt) => ({ organizationId: organization.id, ...lt })),
-    });
-
-    return { organization, user, employee };
-  });
+  const result = await prisma.$transaction((tx) =>
+    createOrganizationWithAdmin(tx, { organizationName, organizationSlug, firstName, lastName, email, passwordHash }),
+  );
 
   const { accessToken, refreshToken } = await issueSession(result.user.id);
 
@@ -193,7 +174,7 @@ const loginSchema = z.object({
 /** At most this many same-email accounts are tried, which bounds bcrypt work per request. */
 const MAX_LOGIN_CANDIDATES = 5;
 
-router.post("/login", async (req, res) => {
+router.post("/login", passwordSignInAllowed, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -210,7 +191,7 @@ router.post("/login", async (req, res) => {
 
   // Always run bcrypt at least once so unknown accounts take as long as wrong passwords.
   if (candidates.length === 0) await bcrypt.compare(password, DUMMY_HASH);
-  const checks = await Promise.all(candidates.map((c) => bcrypt.compare(password, c.passwordHash)));
+  const checks = await Promise.all(candidates.map((c) => comparePassword(password, c.passwordHash)));
 
   let user: (typeof candidates)[number] | undefined;
   let passwordOk = false;
@@ -254,28 +235,76 @@ router.post("/login", async (req, res) => {
 });
 
 // Rotates the refresh token: the old one stops working and a new one is returned.
+//
+// Two ways to present it: in the JSON body (password sign-in; the app keeps it), or - for a
+// WorkEasy360 sign-in - in the httpOnly session cookie, with the "X-HRMS-Session: cookie"
+// header. A cookie session gets its new refresh token as a new cookie and only the access
+// token in the body; the page keeps that in memory.
 router.post("/refresh", async (req, res) => {
-  const { refreshToken } = req.body as { refreshToken?: unknown };
-  if (typeof refreshToken !== "string" || !refreshToken) {
+  const { refreshToken: bodyToken } = (req.body ?? {}) as { refreshToken?: unknown };
+  const fromBody = typeof bodyToken === "string" && bodyToken ? bodyToken : null;
+  const cookieWanted = !fromBody && wantsCookieSession(req);
+  const fromCookie = cookieWanted ? readSessionCookie(req) : null;
+  const refreshToken = fromBody ?? fromCookie;
+  if (!refreshToken) {
+    if (cookieWanted) return res.status(401).json({ error: "You're not signed in." });
     return res.status(400).json({ error: "refreshToken is required" });
   }
 
-  const rotated = await rotateRefreshToken(refreshToken);
+  let rotated;
+  try {
+    rotated = await rotateRefreshToken(refreshToken, { cookie: Boolean(fromCookie) });
+  } catch (error) {
+    if (fromCookie) clearSessionCookie(res);
+    throw error;
+  }
   await enforceDueExit(rotated.userId);
   const { user, roles, permissions, employeeId } = await loadUserContext(rotated.userId);
   if (user.disabledAt || user.employee?.status === "EXITED") {
-    await revokeAllForUser(user.id);
+    await revokeAllForUser(user.id, "account_disabled");
+    if (fromCookie) clearSessionCookie(res);
     return res.status(401).json({ error: "This account has been deactivated." });
   }
-  const accessToken = signAccessToken({ sub: user.id, organizationId: user.organizationId, employeeId, roles, permissions });
+  if (rotated.method === "PASSWORD" && workeasy360.ssoOnly) {
+    await revokeFamily(rotated.familyId, "password_sign_in_disabled");
+    return res.status(401).json({ error: "Sign in with WorkEasy360.", code: "WORKEASY360_SIGN_IN_REQUIRED" });
+  }
+  const accessToken = signAccessToken({
+    sub: user.id,
+    organizationId: user.organizationId,
+    employeeId,
+    roles,
+    permissions,
+    fam: rotated.familyId,
+  });
+  if (fromCookie) {
+    if (rotated.refreshToken) setSessionCookie(res, rotated.refreshToken);
+    return res.json({ accessToken, signInMethod: rotated.method === "WORKEASY360" ? "workeasy360" : "password" });
+  }
+  if (!rotated.refreshToken) throw new HttpError(401, "Your session has expired. Please sign in again.");
   return res.json({ accessToken, refreshToken: rotated.refreshToken });
 });
 
+// Signs out of HRMS only (WorkEasy360 sign-out is GET /api/auth/workeasy360/logout, after this).
+// Ends the session named by the refresh token in the body or by the session cookie, and the one
+// the bearer access token belongs to; its access tokens stop working at once.
 router.post("/logout", async (req, res) => {
-  const { refreshToken } = req.body as { refreshToken?: unknown };
+  const { refreshToken } = (req.body ?? {}) as { refreshToken?: unknown };
   if (typeof refreshToken === "string" && refreshToken) {
     await revokeRefreshToken(refreshToken);
   }
+  const cookie = wantsCookieSession(req) ? readSessionCookie(req) : null;
+  if (cookie) await revokeRefreshToken(cookie);
+  const header = req.headers.authorization;
+  if (header?.startsWith("Bearer ")) {
+    try {
+      const { fam } = verifyAccessToken(header.slice("Bearer ".length));
+      if (fam) await revokeFamily(fam, "signed_out");
+    } catch {
+      // An expired or foreign token names nothing to end.
+    }
+  }
+  if (wantsCookieSession(req)) clearSessionCookie(res);
   return res.status(204).end();
 });
 
@@ -285,11 +314,12 @@ const changePasswordSchema = z.object({
 });
 
 // Changes the password, signs out every other session, and returns fresh tokens for this one.
-router.post("/change-password", requireAuth, async (req, res) => {
+router.post("/change-password", passwordSignInAllowed, requireAuth, async (req, res) => {
   const parsed = changePasswordSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+  if (!user.passwordHash) return res.status(400).json({ error: NO_PASSWORD });
   if (!(await bcrypt.compare(parsed.data.currentPassword, user.passwordHash))) {
     return res.status(401).json({ error: "Your current password is incorrect." });
   }
@@ -301,13 +331,20 @@ router.post("/change-password", requireAuth, async (req, res) => {
     where: { id: user.id },
     data: { passwordHash: await bcrypt.hash(parsed.data.newPassword, BCRYPT_COST), mustChangePassword: false },
   });
-  await revokeAllForUser(user.id);
+  await revokeAllForUser(user.id, "password_changed");
   return res.json(await issueSession(user.id));
 });
 
-// Lets the sign-in page know whether self-service password reset is available.
+// Lets the sign-in page know which ways in exist: password (unless WorkEasy360 is the only
+// one), self-service password reset and registration, and "Continue with WorkEasy360".
 router.get("/config", (_req, res) => {
-  res.json({ emailEnabled: isEmailEnabled(), registrationEnabled: registrationOpen() });
+  const passwordSignIn = !workeasy360.ssoOnly;
+  res.json({
+    emailEnabled: passwordSignIn && isEmailEnabled(),
+    registrationEnabled: passwordSignIn && registrationOpen(),
+    passwordSignIn,
+    workeasy360: { enabled: workeasy360.configured, signOut: workeasy360.signOutAvailable },
+  });
 });
 
 const forgotSchema = z.object({
@@ -316,7 +353,7 @@ const forgotSchema = z.object({
 });
 
 // Always answers the same way, so it can't be used to discover which accounts exist.
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", passwordSignInAllowed, async (req, res) => {
   const parsed = forgotSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   if (!isEmailEnabled()) {
@@ -337,7 +374,7 @@ router.post("/forgot-password", async (req, res) => {
 const tokenSchema = z.object({ token: z.string().min(20).max(200) });
 
 // Checks a set/reset-password link before showing the form.
-router.post("/password-token", async (req, res) => {
+router.post("/password-token", passwordSignInAllowed, async (req, res) => {
   const parsed = tokenSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "This link is invalid or has expired. Ask for a new one." });
   const row = await findValidPasswordToken(parsed.data.token);
@@ -353,7 +390,7 @@ const resetSchema = z.object({ token: z.string().min(20).max(200), newPassword: 
 
 // Sets a password from an emailed link (welcome invite or reset). The user then signs in
 // normally, so two-factor authentication still applies.
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", passwordSignInAllowed, async (req, res) => {
   const parsed = resetSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -367,7 +404,7 @@ router.post("/reset-password", async (req, res) => {
       lockedUntil: null,
     },
   });
-  await revokeAllForUser(row.userId);
+  await revokeAllForUser(row.userId, "password_reset");
   return res.json({ organizationSlug: row.user.organization.slug, email: row.user.email });
 });
 
@@ -382,11 +419,16 @@ router.get("/me", requireAuth, async (req, res) => {
     permissions,
     totpEnabled: user.totpEnabled,
     mustChangePassword: user.mustChangePassword,
+    // How this session signed in, and whether the account has a password of its own here.
+    signInMethod: req.authSession?.method === "WORKEASY360" ? "workeasy360" : "password",
+    hasPassword: Boolean(user.passwordHash),
   });
 });
 
 router.post("/2fa/setup", requireAuth, async (req, res) => {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+  // Two-step verification here guards the password sign-in; WorkEasy360 has its own.
+  if (!user.passwordHash) return res.status(400).json({ error: NO_PASSWORD });
   // Re-running setup would silently replace a working authenticator; require turning it off first.
   if (user.totpEnabled) {
     return res.status(409).json({ error: "Two-factor authentication is already on. Turn it off first to set it up again." });
@@ -424,6 +466,7 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+  if (!user.passwordHash) return res.status(400).json({ error: NO_PASSWORD });
   if (!(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
     return res.status(401).json({ error: "Incorrect password." });
   }
@@ -440,7 +483,7 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
 
 const loginVerifySchema = z.object({ mfaToken: z.string().min(1).max(2048), token: totpCode });
 
-router.post("/2fa/login-verify", async (req, res) => {
+router.post("/2fa/login-verify", passwordSignInAllowed, async (req, res) => {
   const parsed = loginVerifySchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 

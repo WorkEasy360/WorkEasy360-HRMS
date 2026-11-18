@@ -56,8 +56,11 @@ To stop everything: `Ctrl+C` in both terminals, then `docker stop workeasy-postg
 - `index.ts`: middleware (helmet, CORS, body limit, rate limits), route mounting, `/api/health`, graceful shutdown.
 - `modules/<feature>/<feature>.routes.ts`: one Express router per feature. The essential release has twenty: `announcements`, `assistant`, `attendance` (register, corrections and the work schedule), `audit`, `auth`, `automation`, `compensation`, `departments`, `documents`, `employees`, `helpdesk`, `integrations`, `leaveRequests`, `leaveTypes`, `onboarding`, `organizations`, `payroll`, `policies`, `recruitment` (mounted at `/api/hiring`) and `roles`.
 - `ai/`: **the AI assistant** — providers, the turn loop, and what this product lets it see and do. `modules/assistant/` holds the route, the read-only tools and the confirmable actions. See [docs/04-ai-assistant.md](./docs/04-ai-assistant.md).
+- `workeasy360/`: **sign in with WorkEasy360 Accounts** (OpenID Connect client, flows, entitlement cache, provisioning, back-channel logout, routes, operator commands). See [docs/workeasy360-sso.md](./docs/workeasy360-sso.md).
+- `auth/`: `sessions.ts` (every session is a row; every request checks it) and `sessionCookie.ts` (the httpOnly cookie of WorkEasy360 sessions)
+- `scripts/workeasy360.ts`: operator commands (`npm run workeasy360 -- <command>`)
 - `middleware/`
-  - `auth.ts` (`requireAuth`)
+  - `auth.ts` (`requireAuth`: access token, open session, WorkEasy360 entitlement)
   - `requirePermission.ts`
   - `rateLimit.ts` (in-memory)
   - `errorHandler.ts`
@@ -238,4 +241,5 @@ Things that are easy to get wrong, and are deliberate:
 - Close public sign-up once the real organization exists (`ALLOW_PUBLIC_REGISTRATION=false`).
 - Move to a real domain (see above).
 - Rotate the Aurora admin password and the first HRMS admin password; both were shared during setup.
-- Later: refresh token in an httpOnly cookie instead of `localStorage`; Redis-backed rate limiting if the API ever runs on more than one host.
+- WorkEasy360 sign-in keeps its refresh token in an httpOnly cookie and the access token in memory; password sign-in still uses `localStorage` (later: move it to the cookie too). Redis-backed rate limiting if the API ever runs on more than one host.
+- WorkEasy360 sign-in go-live: see "Before go-live" in [docs/workeasy360-sso.md](./docs/workeasy360-sso.md) (a real domain first, DNS proof, keys, binding companies).

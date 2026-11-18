@@ -69,7 +69,7 @@ npm run dev                         # http://localhost:3000
 - Automation: a lightweight rule engine — `when <trigger> then <action>` rules an HR/Admin can create (triggers: employee onboarded, leave approved, timesheet approved; actions: create an announcement, assign an onboarding task). Dispatches inline from the triggering request, best-effort (a rule failure never breaks the request that fired it)
 - Security: TOTP-based 2FA (self-service setup/disable, enforced at login via a short-lived MFA challenge token), and an audit log for sensitive mutations (organization changes, role creation/assignment, compensation records, payroll processing), viewable under Settings → Security
 
-**Not implemented — SSO (Integrations)**: real Google/Microsoft OAuth login requires an actual OAuth app (client ID/secret) registered in that provider's console, which this environment doesn't have. Rather than ship an unusable stub, this is left out of v0; wiring it up (via Passport.js, per `ARCHITECTURE.md`'s stack) is straightforward once real credentials are available.
+**Sign in with WorkEasy360 Accounts**: OpenID Connect (Authorization Code + PKCE, `private_key_jwt`) against the shared WorkEasy360 identity, with companies bound to WorkEasy360 organizations, the entitlement check, back-channel logout and per-request session checks. Off until configured; password sign-in keeps working beside it. See [`docs/workeasy360-sso.md`](./docs/workeasy360-sso.md). (Google/Microsoft sign-in directly is not implemented.)
 
 v0 (Phases 0–3) is feature-complete per `ARCHITECTURE.md`'s roadmap.
 

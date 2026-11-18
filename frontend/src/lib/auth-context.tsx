@@ -1,7 +1,17 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { apiFetch, clearTokens, getRefreshToken, SESSION_EXPIRED_EVENT, setTokens } from "./api";
+import {
+  apiFetch,
+  clearTokens,
+  discardStoredSession,
+  endCookieSession,
+  endSession,
+  restoreCookieSession,
+  SESSION_EXPIRED_EVENT,
+  setTokens,
+  workeasy360SignOutUrl,
+} from "./api";
 import { CurrentUser, Organization } from "./types";
 
 type LoginResult = { mfaRequired: true; mfaToken: string } | { mfaRequired: false };
@@ -19,7 +29,8 @@ interface AuthContextValue {
     email: string;
     password: string;
   }) => Promise<Organization>;
-  logout: () => void;
+  /** Signs out of HRMS; with `workeasy360`, then goes on to WorkEasy360's own sign-out. */
+  logout: (options?: { workeasy360?: boolean }) => void;
   hasPermission: (permission: string) => boolean;
   refetchUser: () => Promise<void>;
 }
@@ -40,13 +51,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const hasToken = typeof window !== "undefined" && localStorage.getItem("accessToken");
-    if (hasToken) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring session on mount
-      refetchUser().finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    // A WorkEasy360 sign-in keeps its session in an httpOnly cookie: renew the in-memory access
+    // token from it (this is also how the page picks up a sign-in that just landed). It wins over
+    // a password session stored in this browser, which a WorkEasy360 sign-in replaces; a password
+    // sign-in ends the cookie session in turn (endCookieSession below).
+    restoreCookieSession()
+      .then(async (restored) => {
+        if (restored) {
+          discardStoredSession();
+          await refetchUser();
+        } else if (localStorage.getItem("accessToken")) {
+          await refetchUser();
+        }
+      })
+      .finally(() => setLoading(false));
   }, [refetchUser]);
 
   // apiFetch signals when the refresh token is no longer valid.
@@ -67,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if ("mfaRequired" in data) {
         return { mfaRequired: true, mfaToken: data.mfaToken };
       }
+      await endCookieSession();
       setTokens(data.accessToken, data.refreshToken);
       await refetchUser();
       return { mfaRequired: false };
@@ -80,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         body: JSON.stringify({ mfaToken, token }),
       });
+      await endCookieSession();
       setTokens(data.accessToken, data.refreshToken);
       await refetchUser();
     },
@@ -103,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         body: JSON.stringify(input),
       });
+      await endCookieSession();
       setTokens(data.accessToken, data.refreshToken);
       await refetchUser();
       return data.organization;
@@ -110,14 +131,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [refetchUser],
   );
 
-  const logout = useCallback(() => {
-    // Revoke the refresh token server-side; sign out locally regardless of the result.
-    const refreshToken = getRefreshToken();
-    if (refreshToken) {
-      apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).catch(() => {});
-    }
+  const logout = useCallback((options?: { workeasy360?: boolean }) => {
+    // End the session server-side (its access tokens stop working at once); sign out locally
+    // regardless of the result. WorkEasy360 sign-out, if asked for, comes after: it is a page
+    // of WorkEasy360's that asks the person to confirm.
+    const ended = endSession();
     clearTokens();
     setUser(null);
+    if (options?.workeasy360) {
+      ended.finally(() => window.location.assign(workeasy360SignOutUrl()));
+    }
   }, []);
 
   const hasPermission = useCallback(

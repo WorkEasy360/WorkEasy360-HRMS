@@ -55,6 +55,10 @@ export interface CurrentUser {
   permissions: string[];
   totpEnabled: boolean;
   mustChangePassword?: boolean;
+  /** How this session signed in. */
+  signInMethod?: "password" | "workeasy360";
+  /** False for an account created by a WorkEasy360 sign-in: it has no HRMS password. */
+  hasPassword?: boolean;
 }
 
 /* ─── Attendance & Leave ─────────────────────────────────────────────── */

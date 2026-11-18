@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 
 /** Fired when the session can no longer be refreshed; AuthProvider listens and signs the user out. */
 export const SESSION_EXPIRED_EVENT = "workeasy:session-expired";
@@ -11,9 +11,20 @@ export class ApiError extends Error {
   }
 }
 
-function getAccessToken() {
+/*
+ * Two kinds of session:
+ *
+ * - Password sign-in (as before): access and refresh token in localStorage.
+ * - WorkEasy360 sign-in: the refresh token is an httpOnly cookie the page cannot read
+ *   (Path=/api/auth, SameSite=Strict), and the short-lived access token lives only in this
+ *   module's memory. A reload renews it from the cookie (restoreCookieSession).
+ */
+let memoryAccessToken: string | null = null;
+const COOKIE_SESSION_HEADERS = { "Content-Type": "application/json", "X-HRMS-Session": "cookie" };
+
+export function getAccessToken() {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("accessToken");
+  return memoryAccessToken ?? localStorage.getItem("accessToken");
 }
 
 export function getRefreshToken() {
@@ -22,13 +33,98 @@ export function getRefreshToken() {
 }
 
 export function setTokens(accessToken: string, refreshToken: string) {
+  memoryAccessToken = null;
   localStorage.setItem("accessToken", accessToken);
   localStorage.setItem("refreshToken", refreshToken);
 }
 
 export function clearTokens() {
+  memoryAccessToken = null;
   localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
+}
+
+/** This tab holds a WorkEasy360 (cookie) session. */
+export function isCookieSession() {
+  return memoryAccessToken !== null;
+}
+
+/** Renews the access token from the WorkEasy360 session cookie; null when there is no such session. */
+async function refreshFromCookie(): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: COOKIE_SESSION_HEADERS,
+      body: "{}",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { accessToken?: string };
+    if (!data.accessToken) return null;
+    memoryAccessToken = data.accessToken;
+    return data.accessToken;
+  } catch {
+    return null;
+  }
+}
+
+/** On page load without a stored password session: is there a WorkEasy360 session cookie? */
+export async function restoreCookieSession(): Promise<boolean> {
+  return (await refreshFromCookie()) !== null;
+}
+
+/**
+ * A WorkEasy360 session took over this browser: the password session stored here (if any) is
+ * ended server-side and forgotten, so the two can never be mixed up.
+ */
+export function discardStoredSession() {
+  const refreshToken = getRefreshToken();
+  localStorage.removeItem("accessToken");
+  localStorage.removeItem("refreshToken");
+  if (refreshToken) {
+    fetch(`${API_URL}/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    }).catch(() => undefined);
+  }
+}
+
+/** A password sign-in took over this browser: the WorkEasy360 session cookie (if any) is ended and cleared. */
+export async function endCookieSession(): Promise<void> {
+  memoryAccessToken = null;
+  await fetch(`${API_URL}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+    headers: COOKIE_SESSION_HEADERS,
+    body: "{}",
+  }).catch(() => undefined);
+}
+
+/** "Continue with WorkEasy360": a plain navigation to the API, which redirects to WorkEasy360. */
+export function workeasy360SignInUrl(next = "/dashboard") {
+  return `${API_URL}/auth/workeasy360/start?next=${encodeURIComponent(next)}`;
+}
+
+/** After HRMS sign-out: on to WorkEasy360's own sign-out (it asks the person to confirm). */
+export function workeasy360SignOutUrl() {
+  return `${API_URL}/auth/workeasy360/logout`;
+}
+
+/** Ends this tab's HRMS session server-side (its access tokens stop working at once). */
+export async function endSession(): Promise<void> {
+  const accessToken = getAccessToken();
+  const refreshToken = getRefreshToken();
+  const cookie = isCookieSession();
+  await fetch(`${API_URL}/auth/logout`, {
+    method: "POST",
+    credentials: cookie ? "include" : "same-origin",
+    headers: {
+      ...(cookie ? COOKIE_SESSION_HEADERS : { "Content-Type": "application/json" }),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(refreshToken && !cookie ? { refreshToken } : {}),
+  }).catch(() => undefined);
 }
 
 // Several requests can hit a 401 at once; share a single refresh so the
@@ -38,6 +134,7 @@ let refreshInFlight: Promise<string | null> | null = null;
 function tryRefresh(): Promise<string | null> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
+      if (isCookieSession()) return refreshFromCookie();
       const refreshToken = getRefreshToken();
       if (!refreshToken) return null;
       try {

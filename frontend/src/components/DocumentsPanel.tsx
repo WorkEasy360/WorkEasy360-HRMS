@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BadgeCheck, Download, FileText, Trash2, Upload } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getAccessToken } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import type { EmployeeDocument } from "@/lib/types";
 import { Button, Card, CardBody, CardHeader, EmptyState, ErrorBanner, LoadingRows } from "@/ui";
@@ -51,7 +51,7 @@ export function DocumentsPanel({ employeeId, title = "Documents" }: { employeeId
     setBusyId(doc.id);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api"}/documents/${doc.id}/content`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("accessToken") ?? ""}` },
+        headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
       });
       if (!res.ok) throw new Error("Download failed");
       await saveFile(await res.blob(), doc.fileName);

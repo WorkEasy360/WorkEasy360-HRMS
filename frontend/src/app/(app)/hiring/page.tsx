@@ -3,7 +3,7 @@
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Briefcase, CalendarPlus, Download, UserPlus, Users } from "lucide-react";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, ApiError, getAccessToken } from "@/lib/api";
 import type { CandidateStage, Department, Employee, Interview, JobApplication, JobPosting } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AccessNotice, type AccessResult } from "@/components/AccessNotice";
@@ -363,7 +363,7 @@ function CandidatesTab() {
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api"}/hiring/candidates/${app.candidate.id}/resume`,
-        { headers: { Authorization: `Bearer ${localStorage.getItem("accessToken") ?? ""}` } },
+        { headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` } },
       );
       if (!res.ok) throw new Error();
       await saveFile(await res.blob(), app.candidate.resumeFileName ?? "resume");
