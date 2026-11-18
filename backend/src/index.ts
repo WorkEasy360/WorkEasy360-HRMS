@@ -1,5 +1,6 @@
 import "dotenv/config";
 import "express-async-errors";
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
@@ -30,6 +31,8 @@ import recruitmentRoutes from "./modules/recruitment/recruitment.routes";
 import rolesRoutes from "./modules/roles/roles.routes";
 import { verifyAssistantConfig } from "./ai/config";
 import { seedPermissions } from "./utils/seedPermissions";
+import workeasy360Routes from "./workeasy360/routes";
+import { configurationProblems } from "./workeasy360/settings";
 
 const app = express();
 
@@ -45,7 +48,9 @@ const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
   .split(",")
   .map((o) => o.trim().replace(/\/$/, ""))
   .filter(Boolean);
-app.use(cors({ origin: corsOrigins, maxAge: 600 }));
+// credentials: the WorkEasy360 session cookie (Path=/api/auth) rides on refresh and logout.
+app.use(cors({ origin: corsOrigins, maxAge: 600, credentials: true }));
+app.use(cookieParser());
 app.use(express.json({ limit: "100kb" }));
 app.use(morgan(isProduction ? "combined" : "dev"));
 
@@ -82,6 +87,8 @@ async function health(_req: express.Request, res: express.Response) {
 app.get("/health", health);
 app.get("/api/health", health);
 
+// "Continue with WorkEasy360" (start, callback, sign-out, back-channel logout), then password sign-in.
+app.use("/api/auth", workeasy360Routes);
 app.use("/api/auth", authRoutes);
 app.use("/api/organizations", organizationsRoutes);
 app.use("/api/dashboard", dashboardRoutes);
@@ -112,6 +119,9 @@ seedPermissions()
   .then(() => {
     // Fails the boot, not the first question, when AI_PROVIDER is set without a key.
     verifyAssistantConfig();
+    // Likewise a WorkEasy360 sign-in that is half configured, or http outside local development.
+    const problems = configurationProblems();
+    if (problems.length) throw new Error(`WorkEasy360 sign-in configuration: ${problems.join("; ")}`);
     const server = app.listen(port, () => {
       console.log(`WorkEasy360 API listening on port ${port}`);
     });

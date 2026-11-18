@@ -12,7 +12,8 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "lint": "tsc --noEmit",
     "migrate:deploy": "prisma migrate deploy",
-    "test": "node --import tsx --test src/**/*.test.ts"
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "workeasy360": "tsx src/scripts/workeasy360.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -21,19 +22,23 @@
     "@aws-sdk/client-sesv2": "^3.1142.0",
     "@prisma/client": "^5.20.0",
     "bcryptjs": "^2.4.3",
+    "cookie-parser": "1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "express-async-errors": "^3.1.1",
     "helmet": "^7.1.0",
+    "jose": "6.2.14",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "openid-client": "6.8.8",
     "otplib": "^13.5.0",
     "prisma": "^5.20.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "1.4.8",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",

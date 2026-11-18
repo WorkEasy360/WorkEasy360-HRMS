@@ -99,11 +99,17 @@ model Organization {
   workStartTime String @default("09:00")
   workEndTime   String @default("18:00")
   fullDayHours  Float  @default(8)
+  /// The WorkEasy360 Accounts organization (the ID token's `organization_id`) this
+  /// company is bound to. Set by the WorkEasy360 sign-in that created the company, or by
+  /// the operator command `workeasy360 link-organization`. Null: not bound, and no
+  /// WorkEasy360 sign-in can land here.
+  workeasy360OrganizationId String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   users                  User[]
+  externalIdentities     ExternalIdentity[]
   departments            Department[]
   employees              Employee[]
   employeeDocuments      EmployeeDocument[]
@@ -140,7 +146,9 @@ model User {
   id                 String    @id @default(uuid())
   organizationId     String
   email              String
-  passwordHash       String
+  /// Null: the account has no password and signs in with WorkEasy360 only (created by
+  /// a WorkEasy360 sign-in).
+  passwordHash       String?
   totpSecret         String?
   totpEnabled        Boolean   @default(false)
   // Last TOTP time step accepted, so a code can't be replayed within its window.
@@ -162,9 +170,117 @@ model User {
   auditLogs      AuditLog[]
   refreshTokens  RefreshToken[]
   passwordTokens PasswordToken[]
+  externalIdentities ExternalIdentity[]
+  authSessions   AuthSession[]
 
   @@unique([organizationId, email])
   @@map("users")
+}
+
+/// A WorkEasy360 Accounts identity linked to an HRMS user: `(issuer, subject)` inside one
+/// organization. One person in two organizations is two HRMS users, so the same
+/// `(issuer, subject)` may appear once per organization, and a user has at most one
+/// subject per issuer.
+model ExternalIdentity {
+  id             String    @id @default(uuid())
+  organizationId String
+  userId         String
+  issuer         String
+  subject        String
+  /// The verified address at the time of linking or last sign-in (profile data, never a key).
+  email          String?
+  createdAt      DateTime  @default(now())
+  lastLoginAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([issuer, subject, organizationId])
+  @@unique([issuer, userId])
+  @@index([userId])
+  @@map("external_identities")
+}
+
+enum SignInMethod {
+  PASSWORD
+  WORKEASY360
+}
+
+/// One signed-in session: a refresh-token family (`RefreshToken.familyId` = `id`). Every
+/// access token names its session (`fam`) and every authenticated request checks here
+/// that it has not ended, so ending a session - sign-out, a WorkEasy360 back-channel
+/// logout, a password change, an exit - stops its access tokens at once on every API
+/// instance (they share this database).
+model AuthSession {
+  id             String       @id @default(uuid())
+  userId         String
+  organizationId String
+  method         SignInMethod
+  /// WorkEasy360 sessions only: who signed in, under which issuer.
+  issuer         String?
+  subject        String?
+  /// WorkEasy360 sessions only: the ID token's `sid` (the WorkEasy360 sign-in), named by a
+  /// back-channel logout token that ends exactly this sign-in.
+  providerSid    String?
+  /// WorkEasy360 sessions only: the ID token's `organization_id`. The session is served only
+  /// while the company is still bound to this organization.
+  workeasy360OrganizationId String?
+  createdAt      DateTime     @default(now())
+  endedAt        DateTime?
+  endedReason    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([issuer, subject])
+  @@index([issuer, providerSid])
+  @@map("auth_sessions")
+}
+
+/// Pending WorkEasy360 sign-ins (Authorization Code + PKCE), kept server-side and used
+/// once. The browser holds only a random flow id in an httpOnly cookie; `id` is its SHA-256.
+model Workeasy360Flow {
+  id           String   @id
+  state        String
+  nonce        String
+  codeVerifier String
+  /// The organization the launcher named (`?organization=`), or empty.
+  organization String   @default("")
+  /// Validated same-site path to land on after sign-in.
+  next         String   @default("/dashboard")
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([expiresAt])
+  @@map("workeasy360_flows")
+}
+
+/// Back-channel logout tokens accepted, so each `jti` is acted on once.
+model Workeasy360LogoutToken {
+  issuer    String
+  jti       String
+  /// After this the token is refused anyway (exp or age), so the row can go.
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@id([issuer, jti])
+  @@index([expiresAt])
+  @@map("workeasy360_logout_tokens")
+}
+
+/// The last answer of the WorkEasy360 entitlement endpoint, per organization (and per
+/// person), shared by every API instance so a restart does not forget a denial.
+model Workeasy360Entitlement {
+  key          String   @id
+  decision     String
+  reason       String
+  writeAllowed Boolean
+  answeredAt   DateTime
+  /// Seconds the answer is trusted before it is asked again.
+  trustSeconds Int
+  updatedAt    DateTime @updatedAt
+
+  @@map("workeasy360_entitlements")
 }
 
 enum PasswordTokenPurpose {
