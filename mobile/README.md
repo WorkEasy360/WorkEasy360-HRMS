@@ -23,6 +23,11 @@ serve phone browsers.
 | `android/` | The Android project. Icons and splash were generated from `frontend/src/ui/assets/logo.png` |
 | `../.github/workflows/android.yml` | Builds and signs the APK on GitHub |
 
+**Sign-in.** The app signs in with HRMS passwords. "Continue with WorkEasy360" is hidden inside
+the app until it opens WorkEasy360 in the system browser and receives the result through an App
+Link (RFC 8252); what that takes is in [`docs/workeasy360-sso.md`](../docs/workeasy360-sso.md#the-android-app).
+Keep `WORKEASY360_SSO_ONLY` off until then, or app users are locked out.
+
 Downloads inside the app (payslip PDF, documents, CSV) open the Android share
 sheet, because a WebView can't save `<a download>` links. See
 `frontend/src/lib/native.ts`.
