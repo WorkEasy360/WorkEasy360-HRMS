@@ -15,6 +15,20 @@ import { useAuth } from "@/lib/auth-context";
  */
 export function AccountSection() {
   const { user, refetchUser } = useAuth();
+  if (user && user.hasPassword === false) {
+    // Created by a WorkEasy360 sign-in: there is no HRMS password or HRMS two-step verification.
+    return (
+      <div className="max-w-3xl space-y-6">
+        <Card className="p-5">
+          <SectionTitle
+            icon={ShieldCheck}
+            title="You sign in with WorkEasy360"
+            description="Your password and two-step verification are managed in your WorkEasy360 account, not in HRMS."
+          />
+        </Card>
+      </div>
+    );
+  }
   return (
     <div className="max-w-3xl space-y-6">
       <PasswordSection onChanged={refetchUser} mustChange={user?.mustChangePassword ?? false} />

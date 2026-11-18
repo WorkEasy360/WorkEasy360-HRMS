@@ -27,11 +27,15 @@ import { useAuth } from "@/lib/auth-context";
 import { ACCOUNT_NAV, findNavItem, isAdminView, mainNav, mobileNav, phoneTitle, type NavItem } from "@/lib/navigation";
 import { usePendingApprovals, type PendingCounts } from "@/lib/use-pending-approvals";
 import { apiFetch } from "@/lib/api";
+import { useAppConfig } from "@/lib/use-app-config";
 import type { Organization } from "@/lib/types";
 import { Avatar, IconButton, Lockup, ThemeToggle } from "@/ui";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout, hasPermission } = useAuth();
+  const config = useAppConfig();
+  // A WorkEasy360 session may also end the WorkEasy360 sign-in (RP-initiated logout).
+  const offerWorkeasy360SignOut = user?.signInMethod === "workeasy360" && Boolean(config?.workeasy360?.signOut);
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -242,14 +246,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     ))}
                     <MenuLink
                       href="/settings?tab=account"
-                      icon={user.totpEnabled ? ShieldCheck : ShieldOff}
-                      label={user.totpEnabled ? "Account & security" : "Account & security · turn on 2FA"}
+                      icon={user.totpEnabled || user.hasPassword === false ? ShieldCheck : ShieldOff}
+                      label={
+                        // An account without an HRMS password secures its sign-in in WorkEasy360.
+                        user.totpEnabled || user.hasPassword === false ? "Account & security" : "Account & security · turn on 2FA"
+                      }
                     />
                     <hr className="c-menu-sep" />
-                    <button role="menuitem" onClick={logout} className="c-menu-item" data-tone="danger">
+                    <button role="menuitem" onClick={() => logout()} className="c-menu-item" data-tone="danger">
                       <LogOut strokeWidth={2} aria-hidden />
                       Sign out
                     </button>
+                    {offerWorkeasy360SignOut && (
+                      <button role="menuitem" onClick={() => logout({ workeasy360: true })} className="c-menu-item" data-tone="danger">
+                        <LogOut strokeWidth={2} aria-hidden />
+                        Sign out of WorkEasy360 too
+                      </button>
+                    )}
                   </div>
                 </>
               )}
@@ -314,17 +327,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <NavLink key={item.href} item={item} active={item.href === activeItem?.href} />
                 ))}
               <Link href="/settings?tab=account" className="c-nav-item">
-                {user.totpEnabled ? <ShieldCheck strokeWidth={2} aria-hidden /> : <ShieldOff strokeWidth={2} aria-hidden />}
+                {user.totpEnabled || user.hasPassword === false ? <ShieldCheck strokeWidth={2} aria-hidden /> : <ShieldOff strokeWidth={2} aria-hidden />}
                 Account &amp; security
               </Link>
               <div className="flex items-center justify-between px-3 py-2 text-sm text-body">
                 Theme
                 <ThemeToggle />
               </div>
-              <button type="button" onClick={logout} className="c-nav-item text-danger-text">
+              <button type="button" onClick={() => logout()} className="c-nav-item text-danger-text">
                 <LogOut strokeWidth={2} aria-hidden />
                 Sign out
               </button>
+              {offerWorkeasy360SignOut && (
+                <button type="button" onClick={() => logout({ workeasy360: true })} className="c-nav-item text-danger-text">
+                  <LogOut strokeWidth={2} aria-hidden />
+                  Sign out of WorkEasy360 too
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, Building2, LogIn, Lock, Mail, ShieldCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, Building2, KeyRound, LogIn, Lock, Mail, ShieldCheck, UserPlus } from "lucide-react";
 import { AuthFeatureTiles, AuthShell, safeNextPath } from "@/components/AuthShell";
 import { errorMessage } from "@/components/feedback";
-import { ApiError } from "@/lib/api";
+import { ApiError, workeasy360SignInUrl } from "@/lib/api";
+import { isNativeApp } from "@/lib/native";
 import { PasswordInput } from "@/components/PasswordInput";
 import { PhoneWelcome } from "@/components/phone/PhoneWelcome";
 import { useIsPhone } from "@/lib/use-phone";
@@ -19,6 +20,25 @@ import { useAppConfig } from "@/lib/use-app-config";
 const LAST_ORG_KEY = "signInOrganizationSlug";
 const LEGACY_ORG_KEY = "lastOrganizationSlug";
 const LAST_EMAIL_KEY = "lastSignInEmail";
+
+/** What a failed WorkEasy360 sign-in (`/login?sso_error=<code>`) means for the person. */
+const SSO_ERRORS: Record<string, string> = {
+  unavailable: "WorkEasy360 sign-in isn't available right now. Please try again shortly.",
+  expired: "That sign-in took too long or was started in another browser. Please try again.",
+  cancelled: "Sign-in was cancelled.",
+  refused: "WorkEasy360 couldn't confirm your sign-in. Please try again.",
+  wrong_product: "That sign-in was meant for a different product. Please try again from WorkEasy360.",
+  wrong_organization: "That sign-in was for a different organization than the one you chose. Please try again.",
+  organization_missing: "Choose an organization in WorkEasy360, then try again.",
+  email_unverified: "Verify your email address in WorkEasy360, then try again.",
+  not_entitled: "Your organization doesn't have access to HRMS. Ask an administrator in WorkEasy360.",
+  access_unverified: "HRMS couldn't confirm your organization's access with WorkEasy360. Please try again shortly.",
+  organization_not_linked: "Your organization isn't set up in HRMS yet. Ask your administrator.",
+  not_enrolled: "You're not set up in your company's HRMS yet. Ask your HR team to add you with this email address.",
+  account_disabled: "This account has been deactivated. Contact your HR team.",
+  account_conflict: "This HRMS account is linked to a different WorkEasy360 account. Contact your HR team.",
+  rate_limited: "Too many sign-in attempts. Please wait a minute and try again.",
+};
 
 export default function LoginPage() {
   const { user, loading, login, completeMfaLogin } = useAuth();
@@ -42,6 +62,15 @@ export default function LoginPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // The Android app keeps password sign-in for now: WorkEasy360 sign-in from an app needs the
+  // system browser and an app-link redirect (RFC 8252, docs/workeasy360-sso.md), not this WebView.
+  const [native, setNative] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the native bridge is only visible after hydration
+    setNative(isNativeApp());
+  }, []);
+  const workeasy360Available = Boolean(config?.workeasy360?.enabled) && !native;
+  const passwordAllowed = config?.passwordSignIn !== false;
 
   // Already signed in: skip the form.
   useEffect(() => {
@@ -52,8 +81,10 @@ export default function LoginPage() {
   useEffect(() => {
     const search = new URLSearchParams(window.location.search);
     const prefillEmail = search.get("email");
+    const ssoError = search.get("sso_error");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring saved values on mount
-    if (prefillEmail || search.get("next")) setShowForm(true);
+    if (prefillEmail || search.get("next") || ssoError) setShowForm(true);
+    if (ssoError) setError(SSO_ERRORS[ssoError] ?? SSO_ERRORS.refused);
     if (prefillEmail) setEmail(prefillEmail);
     try {
       localStorage.removeItem(LEGACY_ORG_KEY);
@@ -163,6 +194,35 @@ export default function LoginPage() {
     );
   }
 
+  const workeasy360Button = workeasy360Available && (
+    <a
+      href={workeasy360SignInUrl(safeNextPath())}
+      className="flex h-11 w-full short:h-10 items-center justify-center gap-2 rounded-md border-2 border-[color:var(--we-accent)] text-base font-semibold text-accent-strong hover:bg-accent-soft"
+    >
+      <KeyRound className="size-5" strokeWidth={2} aria-hidden />
+      Continue with WorkEasy360
+    </a>
+  );
+
+  if (config && !passwordAllowed) {
+    // WorkEasy360 is the only way in (WORKEASY360_SSO_ONLY). Never started automatically from
+    // this page: the person chooses, so a sign-out never ends in a silent sign-in.
+    return (
+      <AuthShell title="HRMS Login" subtitle="Sign in with your WorkEasy360 account." footer={<AuthFeatureTiles />}>
+        <div className="space-y-4">
+          <ErrorBanner message={error} />
+          {workeasy360Button || (
+            <p className="c-hint" role="status">
+              {native
+                ? "Sign in with WorkEasy360 isn't available in the app yet. Please use HRMS in your browser."
+                : "Sign-in is being set up. Please try again shortly."}
+            </p>
+          )}
+        </div>
+      </AuthShell>
+    );
+  }
+
   if (isPhone && !showForm) {
     return <PhoneWelcome onLogin={() => setShowForm(true)} canRegister={!!config?.registrationEnabled} />;
   }
@@ -255,6 +315,17 @@ export default function LoginPage() {
         <Button type="submit" icon={LogIn} loading={submitting} className="h-11 w-full text-base short:h-10">
           Log In to HRMS
         </Button>
+
+        {workeasy360Button && (
+          <>
+            <div className="flex items-center gap-3 text-sm text-secondary" aria-hidden>
+              <span className="h-px flex-1 bg-line" />
+              <span className="rounded-full border border-line px-3 py-1 short:py-0">OR</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            {workeasy360Button}
+          </>
+        )}
 
         {config?.registrationEnabled && (
           <>
