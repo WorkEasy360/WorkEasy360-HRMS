@@ -36,8 +36,23 @@ describe("WorkEasy360 settings", () => {
     assert.ok(isAcceptableUrl("http://127.0.0.1:8031"));
     assert.ok(isAcceptableUrl("http://localhost:8031"));
     assert.ok(!isAcceptableUrl("http://accounts.workeasy360.com"));
+    // Loopback is 127.0.0.0/8 and ::1, as the platform defines it: a local run may use 127.0.0.13.
+    assert.ok(isAcceptableUrl("http://127.0.0.13:8313/api/auth/callback/workeasy360"));
+    assert.ok(isAcceptableUrl("http://127.255.255.254/login"));
+    assert.ok(isAcceptableUrl("http://[::1]:4000/login"));
+    assert.ok(!isAcceptableUrl("http://128.0.0.1/login"));
+    assert.ok(!isAcceptableUrl("http://127.0.0.1.example.com/login"));
+    assert.ok(!isAcceptableUrl("http://10.0.0.1/login"));
+    configure({
+      ...complete,
+      WORKEASY360_ISSUER: "http://127.0.0.1:8031",
+      WORKEASY360_REDIRECT_URI: "http://127.0.0.13:8313/api/auth/callback/workeasy360",
+      WORKEASY360_POST_LOGOUT_REDIRECT_URI: "http://127.0.0.13:3113/login",
+    });
+    assert.deepEqual(configurationProblems(), []);
     process.env.NODE_ENV = "production";
     assert.ok(!isAcceptableUrl("http://127.0.0.1:8031"));
+    assert.ok(!isAcceptableUrl("http://127.0.0.13:8313"));
     assert.ok(isAcceptableUrl("https://accounts.workeasy360.com"));
   });
 

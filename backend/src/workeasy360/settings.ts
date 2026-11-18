@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isIPv4 } from "node:net";
 
 /**
  * WorkEasy360 Accounts sign-in configuration, read from the environment. The names are
@@ -23,7 +24,17 @@ import { readFileSync } from "node:fs";
  * variables per request is free. The private key is read when it is needed.
  */
 
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+const LOOPBACK_NAMES = new Set(["localhost", "[::1]", "::1"]);
+
+/**
+ * A loopback host as the platform and its reference connector define it (Python's
+ * `ipaddress.is_loopback`, RFC 6890): `localhost`, ::1 and the whole of 127.0.0.0/8, not only
+ * 127.0.0.1 - a product can run on 127.0.0.13 in a local run next to others. `URL` has already
+ * normalised the host (lower case, IPv4 in dotted decimal, IPv6 in brackets).
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  return LOOPBACK_NAMES.has(hostname) || (isIPv4(hostname) && hostname.startsWith("127."));
+}
 
 export const DEFAULT_PRODUCT_CODE = "workeasy_hrms";
 export const DEFAULT_SCOPES = ["openid", "email", "profile", "organization"];
@@ -108,7 +119,7 @@ export function isAcceptableUrl(value: string): boolean {
     return false;
   }
   if (url.protocol === "https:") return true;
-  return url.protocol === "http:" && !isProduction() && LOOPBACK_HOSTS.has(url.hostname);
+  return url.protocol === "http:" && !isProduction() && isLoopbackHost(url.hostname);
 }
 
 /**
