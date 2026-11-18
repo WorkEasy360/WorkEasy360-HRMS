@@ -37,10 +37,19 @@ HS256 are refused), `iss` **exactly** `WORKEASY360_ISSUER` (the discovery docume
   organizations. If the launcher named an organization, the token must name the same one.
 - People are linked on **`(issuer, sub)`** inside that company (`external_identities`). One person in
   two companies is two HRMS users, as before.
-- First WorkEasy360 sign-in of an existing employee: the company's account with the **verified**
-  address is linked (WorkEasy360 has verified the address and the membership; the company was bound
-  by the operator or created by WorkEasy360). An account already linked to another WorkEasy360
-  identity is refused (`account_conflict`). The password stays, so password sign-in keeps working.
+- **No automatic merge by email (default).** A first WorkEasy360 sign-in whose address matches an
+  existing account of the bound company that is not linked yet is **refused** with `account_conflict`
+  ("contact your administrator to link it"); nothing is linked. The administrator links that account
+  with the operator command `link-user` (an operator-vouched link, audited with who and why; see
+  [Linking existing accounts](#linking-existing-accounts)). An account already linked (to another
+  WorkEasy360 identity, or under another issuer) is refused with `account_conflict` too.
+- `WORKEASY360_LINK_BY_VERIFIED_EMAIL=true` (off by default) lets a first sign-in link the account
+  itself, and only when: `email_verified` is true; the account belongs to the company bound to the
+  token's `organization_id` (the lookup never sees another company); and the account has no
+  WorkEasy360 link under any issuer. Every such link is audited (`user.workeasy360_linked`, `via:
+  "automatic"`).
+- Linking never touches the password: password sign-in keeps working (see
+  [Retiring passwords](#retiring-passwords)).
 - **Nobody is created in an existing company.** Employees and their HR roles come from HRMS's own
   records; someone HR has not added is told so (`not_enrolled`). Roles and permissions are the
   account's own HRMS roles: nothing is authorized on `sub` alone.
@@ -128,6 +137,7 @@ In `backend/.env` (development) or `deploy/.env` (production). See `backend/.env
 | `WORKEASY360_SCOPES` | Default `openid email profile organization` (`openid` and `email` are always added) |
 | `WORKEASY360_SSO_ONLY` | `true`: password sign-in, registration, resets and password changes are refused, and password sessions end. Default off. |
 | `WORKEASY360_CREATE_ORGANIZATIONS` | `false`: an unbound organization is refused instead of creating a company. Default on. |
+| `WORKEASY360_LINK_BY_VERIFIED_EMAIL` | `true`: a first sign-in links the bound company's unlinked account with the verified address (same company only, never an account already linked; audited). Default **off**: that sign-in is `account_conflict` and the account is linked with `link-user`. |
 | `WORKEASY360_SIGN_IN_RATE_LIMIT` | Starts and callbacks per IP per minute per process (default 30) |
 | `APP_URL` | Where a sign-in lands (the web app's origin; defaults to the first `CORS_ORIGIN`) |
 | `COOKIE_SECURE` | Default: Secure cookies in production only. `true` forces them; `false` is ignored in production. |
@@ -146,9 +156,44 @@ Development: `npm run workeasy360 -- <command>` in `backend/`. Production contai
 | `keygen --out <private.pem>` | A new RSA-3072 key pair: writes the private key (mode 600; it goes into the secret store, never the repository) and prints the **public** key for Super Admin. `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072` works too. |
 | `check [--organization <uuid>]` | Readiness self-test: configuration, discovery (exact issuer), the key, and the URIs to register. With `--organization`, one real entitlement question, which proves the credential against the live provider (a refused client is an error). |
 | `status` | Every company, the WorkEasy360 organization it is bound to, and how many people are linked |
-| `link-organization --company <slug\|id> --organization <uuid>` | Binds an existing company to a WorkEasy360 organization, so its WorkEasy360 sign-ins land there. Run it for every live customer **before** they first sign in with WorkEasy360. |
-| `unlink-organization --company <slug\|id>` | Removes the binding: the company's WorkEasy360 sessions end at once and its links are removed. Password sign-in is unaffected. |
+| `link-organization --company <slug\|id> --organization <uuid> [--actor <who>] [--reason <why>]` | Binds an existing company to a WorkEasy360 organization, so its WorkEasy360 sign-ins land there. Run it for every live customer **before** they first sign in with WorkEasy360. Audited (`organization.workeasy360_bound`). |
+| `unlink-organization --company <slug\|id> [--actor <who>] [--reason <why>]` | Removes the binding: the company's WorkEasy360 sessions end at once and its links are removed. Password sign-in is unaffected. Audited (`organization.workeasy360_unbound`). |
+| `link-user --organization <uuid> --email <address> --subject <sub> --actor <who> --reason <why> [--issuer <issuer>]` | An operator-vouched link of one existing account to a WorkEasy360 identity (below). |
 | `move-issuer --from <old> [--to <new>] [--apply]` | Moves the `(issuer, sub)` links and open sessions to a new issuer name, in the release that changes `WORKEASY360_ISSUER` (dry run without `--apply`). |
+
+## Linking existing accounts
+
+By default a WorkEasy360 sign-in never merges into an existing HRMS account because the addresses
+match: the person sees "An HRMS account with this email already exists but isn't linked to this
+WorkEasy360 account. Contact your administrator to link it." (`account_conflict`). The administrator
+confirms that the WorkEasy360 person is the owner of that account (for example with the customer's HR
+lead), then runs:
+
+```
+npm run workeasy360 -- link-user --organization <workeasy360 org uuid> --email <address> \
+  --subject <the person's WorkEasy360 sub> --actor <operator name or email> --reason "<ticket, who confirmed>"
+```
+
+- The account must belong to the company bound to `--organization` (bind it first with
+  `link-organization`); `--issuer` defaults to `WORKEASY360_ISSUER`.
+- It refuses, and changes nothing, when the account is already linked (to another identity or under
+  another issuer) or the identity is already linked to another account of that company. Running it
+  again with the same link changes nothing.
+- The link and its audit record are written in one transaction: `audit_logs` action
+  `user.workeasy360_linked`, with `issuer`, `subject`, `email`, `workeasy360OrganizationId`, `via:
+  "operator"`, `actor` and `reason` (the time is the row's `createdAt`). Automatic links (only with
+  `WORKEASY360_LINK_BY_VERIFIED_EMAIL=true`) write the same record with `via: "automatic"`.
+- The person's next WorkEasy360 sign-in lands in that account, with its HRMS roles.
+
+## Retiring passwords
+
+Linking (by `link-user`, or automatically when enabled) leaves the account's password and its open
+password sessions as they are, so nobody is locked out while linking and the migration are being
+proven. Passwords are retired by `WORKEASY360_SSO_ONLY=true`, not by linking: with it, password
+sign-in, registration, resets and password changes are refused and every password session ends at
+its next request (`WORKEASY360_SIGN_IN_REQUIRED`); the stored hashes stay in the database, unused.
+Turn it on only after every live person is linked and the Android app signs in through WorkEasy360
+(see [The Android app](#the-android-app)); until then it would lock app users out.
 
 ## Run it locally against a provider on 127.0.0.1:8031
 
@@ -231,7 +276,10 @@ HRMS_TEST_DATABASE_URL="postgresql://hrms:hrms_local_only@127.0.0.1:15561/hrms" 
   attempts; back-channel logout valid (by `sid` and by `sub`), forged (bad signature, other issuer,
   other audience, wrong `typ`, missing event, nonce, expired) and replayed; **an unexpired access
   token refused at once on both instances after logout, and refresh refused**; sign-out; account
-  switching; exits; password sign-in and `WORKEASY360_SSO_ONLY`.
+  switching; exits; password sign-in and `WORKEASY360_SSO_ONLY`; linking existing accounts (an email
+  match refused by default; with `WORKEASY360_LINK_BY_VERIFIED_EMAIL=true` a same-company link,
+  audited, never another company's account, never an account already linked; `link-user` links
+  and audits, and refuses each conflict).
 
 ## The Android app
 
@@ -270,7 +318,9 @@ Until then **do not set `WORKEASY360_SSO_ONLY=true`**: app users would be locked
 4. Register the production integration (above), grant HRMS to the customers' organizations and map
    their plans.
 5. Bind every live company to its WorkEasy360 organization with `link-organization` **before**
-   announcing the button (otherwise a first sign-in creates an empty company).
+   announcing the button (otherwise a first sign-in creates an empty company), and link existing
+   people with `link-user` (their email alone does not link them; leave
+   `WORKEASY360_LINK_BY_VERIFIED_EMAIL` off unless the owner accepts verified-email linking).
 6. Deploy (the migration is additive), run `check --organization <uuid>`, sign in once and sign out
    everywhere, run the platform's conformance run, then activate and publish the integration.
 7. Keep `WORKEASY360_SSO_ONLY` off until the Android app signs in through WorkEasy360.

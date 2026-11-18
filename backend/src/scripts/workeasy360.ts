@@ -3,7 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
 import { prisma } from "../config/prisma";
 import { describe, workeasy360Client } from "../workeasy360/client";
-import { linkOrganization, moveIssuer, OperatorError, organizationStatus, unlinkOrganization } from "../workeasy360/operator";
+import { linkOrganization, linkUser, moveIssuer, OperatorError, organizationStatus, unlinkOrganization } from "../workeasy360/operator";
 import { configurationProblems, workeasy360 } from "../workeasy360/settings";
 
 /**
@@ -12,8 +12,10 @@ import { configurationProblems, workeasy360 } from "../workeasy360/settings";
  *   keygen --out <private-key.pem>          a new RSA key pair; prints the PUBLIC key for Super Admin
  *   check [--organization <uuid>]           discovery, the client key, and (optionally) one entitlement question
  *   status                                  every company and the WorkEasy360 organization it is bound to
- *   link-organization --company <slug|id> --organization <uuid>
- *   unlink-organization --company <slug|id>
+ *   link-organization --company <slug|id> --organization <uuid> [--actor <who>] [--reason <why>]
+ *   unlink-organization --company <slug|id> [--actor <who>] [--reason <why>]
+ *   link-user --organization <uuid> --email <address> --subject <sub> --actor <who> --reason <why> [--issuer <issuer>]
+ *                                           an operator-vouched link of one existing account (audited)
  *   move-issuer --from <old issuer> [--to <new issuer>] [--apply]   (default --to: WORKEASY360_ISSUER)
  *
  * Development: npm run workeasy360 -- <command> ...   Production image: node dist/scripts/workeasy360.js <command> ...
@@ -76,7 +78,10 @@ async function main(): Promise<void> {
       return;
     }
     case "link-organization": {
-      const result = await linkOrganization(prisma, required(args, "company"), required(args, "organization"));
+      const result = await linkOrganization(prisma, required(args, "company"), required(args, "organization"), {
+        actor: option(args, "actor"),
+        reason: option(args, "reason"),
+      });
       console.log(
         result.changed
           ? `${result.company.name} (${result.company.slug}) is now bound to WorkEasy360 organization ${result.company.workeasy360OrganizationId}.`
@@ -85,11 +90,30 @@ async function main(): Promise<void> {
       return;
     }
     case "unlink-organization": {
-      const result = await unlinkOrganization(prisma, required(args, "company"));
+      const result = await unlinkOrganization(prisma, required(args, "company"), {
+        actor: option(args, "actor"),
+        reason: option(args, "reason"),
+      });
       console.log(
         result.changed
           ? `${result.company.name} is no longer bound; ${result.sessionsEnded} WorkEasy360 sessions ended, ${result.identitiesRemoved} links removed.`
           : `${result.company.name} was not bound; nothing changed.`,
+      );
+      return;
+    }
+    case "link-user": {
+      const result = await linkUser(prisma, {
+        workeasy360OrganizationId: required(args, "organization"),
+        email: required(args, "email"),
+        subject: required(args, "subject"),
+        issuer: option(args, "issuer") ?? workeasy360.issuer,
+        actor: required(args, "actor"),
+        reason: required(args, "reason"),
+      });
+      console.log(
+        result.changed
+          ? `${result.user.email} in ${result.company.name} (${result.company.slug}) is now linked to WorkEasy360 identity ${result.subject} at ${result.issuer} (audited).`
+          : `${result.user.email} in ${result.company.name} was already linked to ${result.subject}; nothing changed.`,
       );
       return;
     }
@@ -102,7 +126,7 @@ async function main(): Promise<void> {
       return;
     }
     default:
-      console.log("Commands: keygen, check, status, link-organization, unlink-organization, move-issuer (see docs/workeasy360-sso.md)");
+      console.log("Commands: keygen, check, status, link-organization, unlink-organization, link-user, move-issuer (see docs/workeasy360-sso.md)");
       process.exitCode = command ? 2 : 0;
   }
 }

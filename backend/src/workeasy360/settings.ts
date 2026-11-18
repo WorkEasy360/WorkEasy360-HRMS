@@ -19,6 +19,10 @@ import { isIPv4 } from "node:net";
  *
  *   WORKEASY360_CREATE_ORGANIZATIONS      "false": a WorkEasy360 organization that no company is
  *                                         bound to is refused instead of creating a company
+ *   WORKEASY360_LINK_BY_VERIFIED_EMAIL    "true": a first WorkEasy360 sign-in links the bound company's
+ *                                         unlinked account with the verified address (audited).
+ *                                         Default off: that sign-in is refused (account_conflict)
+ *                                         and an operator links the account with `link-user`.
  *
  * Nothing here is cached: tests and operators change the environment, and reading a few
  * variables per request is free. The private key is read when it is needed.
@@ -81,6 +85,14 @@ export const workeasy360 = {
   /** A first sign-in from an unbound WorkEasy360 organization creates its company. */
   get createOrganizations(): boolean {
     return env("WORKEASY360_CREATE_ORGANIZATIONS").toLowerCase() !== "false";
+  },
+  /**
+   * A first sign-in may link the bound company's existing, unlinked account with the verified
+   * address. Off unless exactly "true": an email match is refused and an operator links the
+   * account with `link-user` (an operator-vouched link, as the other WorkEasy360 products do).
+   */
+  get linkByVerifiedEmail(): boolean {
+    return env("WORKEASY360_LINK_BY_VERIFIED_EMAIL").toLowerCase() === "true";
   },
   /** Everything a sign-in needs is present (says nothing about whether the provider answers). */
   get configured(): boolean {

@@ -36,7 +36,8 @@ const SSO_ERRORS: Record<string, string> = {
   organization_not_linked: "Your organization isn't set up in HRMS yet. Ask your administrator.",
   not_enrolled: "You're not set up in your company's HRMS yet. Ask your HR team to add you with this email address.",
   account_disabled: "This account has been deactivated. Contact your HR team.",
-  account_conflict: "This HRMS account is linked to a different WorkEasy360 account. Contact your HR team.",
+  account_conflict:
+    "An HRMS account with this email already exists but isn't linked to this WorkEasy360 account. Contact your administrator to link it.",
   rate_limited: "Too many sign-in attempts. Please wait a minute and try again.",
 };
 

@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { PrismaClient } from "@prisma/client";
 import { createOrganizationWithAdmin } from "../utils/organizationSetup";
-import { linkOrganization, unlinkOrganization } from "./operator";
+import { linkOrganization, linkUser, OperatorError, unlinkOrganization } from "./operator";
 import { FakeWorkeasy360, productKeyPair, type AuthorizeOptions, type Identity } from "./testing/fakeProvider";
 import {
   Browser,
@@ -40,6 +40,7 @@ const PASSWORD = "Correct-Horse-42";
 const ada: Identity = { sub: "sub-ada", email: "ada@acme.example", name: "Ada Admin", organizationId: ORG_ACME, organizationName: "Acme Corp" };
 const ben: Identity = { sub: "sub-ben", email: "ben@globex.example", name: "Ben Employee", organizationId: ORG_GLOBEX };
 const gina: Identity = { sub: "sub-gina", email: "gina@globex.example", name: "Gina HR", organizationId: ORG_GLOBEX };
+const OPERATOR = { actor: "ops@workeasy360.example", reason: "ticket HR-1: confirmed with the customer's HR lead" };
 
 const skip = TEST_DATABASE_URL ? false : "set HRMS_TEST_DATABASE_URL to run the end-to-end WorkEasy360 tests";
 
@@ -50,6 +51,8 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
   let one: Api;
   let two: Api;
   let ssoOnly: Api;
+  /** An instance with WORKEASY360_LINK_BY_VERIFIED_EMAIL=true (the others keep the default, off). */
+  let autoLink: Api;
   let removeKey: () => void;
   const keys = productKeyPair();
   const companies: Record<string, string> = {};
@@ -83,6 +86,7 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
       WORKEASY360_SCOPES: "openid email profile organization",
       WORKEASY360_SSO_ONLY: "false",
       WORKEASY360_CREATE_ORGANIZATIONS: "true",
+      WORKEASY360_LINK_BY_VERIFIED_EMAIL: "false",
       WORKEASY360_SIGN_IN_RATE_LIMIT: "10000",
       COOKIE_SECURE: "",
     };
@@ -92,6 +96,7 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
     one = await startApi(env, portOne);
     two = await startApi(env);
     ssoOnly = await startApi({ ...env, WORKEASY360_SSO_ONLY: "true" });
+    autoLink = await startApi({ ...env, WORKEASY360_LINK_BY_VERIFIED_EMAIL: "true" });
 
     // Existing HRMS companies with password accounts (as live customers have them today).
     companies.globex = await existingCompany("Globex", "globex", "gina@globex.example");
@@ -101,10 +106,13 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
     await linkOrganization(db, "initech", ORG_INITECH);
     companies.hooli = await existingCompany("Hooli", "hooli", "hal@hooli.example");
     await linkOrganization(db, "hooli", ORG_HOOLI);
+    // Existing people are linked by the operator (an email match alone never links by default).
+    await vouch(gina);
+    await vouch(ben);
   });
 
   after(async () => {
-    await Promise.all([one?.stop(), two?.stop(), ssoOnly?.stop()]);
+    await Promise.all([one?.stop(), two?.stop(), ssoOnly?.stop(), autoLink?.stop()]);
     await provider?.stop();
     await schema?.drop();
     removeKey?.();
@@ -130,6 +138,16 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
       data: { organizationId, userId: user.id, employeeCode: code, firstName, lastName: "Tester", status: "ACTIVE" },
     });
     return employee.id;
+  }
+
+  /** The operator links an existing account to the person's WorkEasy360 identity. */
+  function vouch(identity: Identity, organizationId = identity.organizationId) {
+    const email = identity.email ?? "";
+    return linkUser(db, { email, subject: identity.sub, workeasy360OrganizationId: organizationId, issuer: provider.issuer, ...OPERATOR });
+  }
+
+  function linkAudits(userId: string) {
+    return db.auditLog.findMany({ where: { action: "user.workeasy360_linked", entityId: userId }, orderBy: { createdAt: "asc" } });
   }
 
   interface Landing {
@@ -260,21 +278,25 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
     assert.equal(new URL(second.location).searchParams.get("sso_error"), "expired");
   });
 
-  it("an existing employee is linked by verified address inside the bound company, keeping their HRMS role", async () => {
+  it("an employee the operator linked signs in to their own account, keeping their HRMS role and password", async () => {
     const { token } = await signedIn(one, ben);
     const me = (await call(one, token, "/api/auth/me")).body as { roles: string[]; email: string; hasPassword: boolean };
     assert.deepEqual(me.roles, ["Employee"]);
     assert.equal(me.email, "ben@globex.example");
     assert.equal(me.hasPassword, true, "linking keeps the password: password sign-in still works for live customers");
+    await passwordSignIn(two, "ben@globex.example", "globex");
     assert.equal((await call(one, token, "/api/employees")).status, 403, "permissions come from the HRMS role, not from WorkEasy360");
     const link = await db.externalIdentity.findFirstOrThrow({ where: { subject: "sub-ben" } });
     assert.equal(link.organizationId, companies.globex);
     assert.equal(link.issuer, provider.issuer);
   });
 
-  it("an account already linked to another WorkEasy360 identity is not taken over", async () => {
-    const impostor = await signIn(one, { ...ben, sub: "sub-somebody-else" });
-    assert.equal(impostor.error, "account_conflict");
+  it("an account already linked to another WorkEasy360 identity is not taken over (setting off or on)", async () => {
+    for (const api of [one, autoLink]) {
+      const impostor = await signIn(api, { ...ben, sub: "sub-somebody-else" });
+      assert.equal(impostor.error, "account_conflict");
+    }
+    assert.equal(await db.externalIdentity.count({ where: { subject: "sub-somebody-else" } }), 0);
   });
 
   it("nobody is created in an existing company: someone HR has not added is told so", async () => {
@@ -290,9 +312,12 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
     });
 
     it("does not link an address known in one company from a token naming another organization", async () => {
-      // Ben exists only in Globex; a token for Acme with his address must not reach Globex's account.
-      const landing = await signIn(one, { sub: "sub-ben-at-acme", email: "ben@globex.example", organizationId: ORG_ACME });
-      assert.equal(landing.error, "not_enrolled");
+      // Ben exists only in Globex; a token for Acme with his address must not reach Globex's account,
+      // whether or not automatic linking is on.
+      for (const api of [one, autoLink]) {
+        const landing = await signIn(api, { sub: "sub-ben-at-acme", email: "ben@globex.example", organizationId: ORG_ACME });
+        assert.equal(landing.error, "not_enrolled");
+      }
       assert.equal(await db.externalIdentity.count({ where: { subject: "sub-ben-at-acme" } }), 0);
     });
 
@@ -305,12 +330,20 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
     it("a WorkEasy360 session ends when its company is unbound from the organization it signed in for", async () => {
       const { token } = await signedIn(one, gina);
       assert.equal(await status(two, token), 200);
-      await unlinkOrganization(db, "globex");
+      await unlinkOrganization(db, "globex", OPERATOR);
       try {
         assert.equal(await status(one, token), 401);
         assert.equal(await status(two, token), 401);
+        const unbound = await db.auditLog.findFirstOrThrow({ where: { action: "organization.workeasy360_unbound", entityId: companies.globex } });
+        assert.deepEqual(unbound.before, { workeasy360OrganizationId: ORG_GLOBEX });
+        assert.deepEqual(unbound.after, { via: "operator", ...OPERATOR });
+        // Its links went with the binding: a sign-in now finds an unlinked account and is refused.
+        await linkOrganization(db, "globex", ORG_GLOBEX, OPERATOR);
+        assert.equal((await signIn(one, gina)).error, "account_conflict");
       } finally {
         await linkOrganization(db, "globex", ORG_GLOBEX);
+        await vouch(gina);
+        await vouch(ben);
       }
     });
   });
@@ -366,6 +399,142 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
       const write = await call(one, accessToken, "/api/organizations/current", { method: "PATCH", body: { name: "Hooli XYZ" } });
       assert.equal(write.status, 403);
       assert.equal((write.body as { code: string }).code, "WORKEASY360_READ_ONLY");
+    });
+  });
+
+  // --- linking existing accounts ---------------------------------------------------------------
+
+  describe("linking an existing account", () => {
+    it("by default an email match is refused (account_conflict): nothing is linked, the account and its password stay", async () => {
+      await addEmployee(companies.globex, "dora@globex.example", "Dora", "EMP-0101");
+      const dora: Identity = { sub: "sub-dora", email: "dora@globex.example", organizationId: ORG_GLOBEX };
+      const before = await db.authSession.count();
+      const landing = await signIn(one, dora);
+      assert.equal(landing.error, "account_conflict");
+      assert.equal(landing.browser.cookies.get("hrms_session"), undefined);
+      assert.equal(await db.authSession.count(), before, "no session opened");
+      const user = await db.user.findFirstOrThrow({ where: { organizationId: companies.globex, email: "dora@globex.example" } });
+      assert.equal(await db.externalIdentity.count({ where: { userId: user.id } }), 0, "no automatic merge");
+      assert.equal((await linkAudits(user.id)).length, 0);
+      assert.ok(user.passwordHash, "the password is untouched");
+      await passwordSignIn(two, "dora@globex.example", "globex");
+    });
+
+    it("with WORKEASY360_LINK_BY_VERIFIED_EMAIL=true, the bound company's unlinked account with the verified address is linked, and audited", async () => {
+      await addEmployee(companies.globex, "fay@globex.example", "Fay", "EMP-0102");
+      const fay: Identity = { sub: "sub-fay", email: "fay@globex.example", organizationId: ORG_GLOBEX };
+      const { token } = await signedIn(autoLink, fay);
+      const me = (await call(autoLink, token, "/api/auth/me")).body as { id: string; roles: string[]; hasPassword: boolean };
+      assert.deepEqual(me.roles, ["Employee"]);
+      assert.equal(me.hasPassword, true, "the password stays");
+      const link = await db.externalIdentity.findFirstOrThrow({ where: { userId: me.id } });
+      assert.equal(link.subject, "sub-fay");
+      assert.equal(link.issuer, provider.issuer);
+      assert.equal(link.organizationId, companies.globex);
+      const audits = await linkAudits(me.id);
+      assert.equal(audits.length, 1);
+      assert.equal(audits[0].organizationId, companies.globex);
+      assert.equal(audits[0].actorUserId, me.id);
+      assert.deepEqual(audits[0].after, {
+        issuer: provider.issuer,
+        subject: "sub-fay",
+        email: "fay@globex.example",
+        workeasy360OrganizationId: ORG_GLOBEX,
+        via: "automatic",
+      });
+      // Later sign-ins (on any instance) go by (issuer, sub) and do not link or audit again.
+      await signedIn(one, fay);
+      assert.equal((await linkAudits(me.id)).length, 1);
+    });
+
+    it("with the setting on, only the account of the company bound to the token's organization is linked, never another company's", async () => {
+      // The same address in two companies: Initech's sign-in links Initech's account only.
+      await addEmployee(companies.globex, "sam@shared.example", "Sam", "EMP-0103");
+      await addEmployee(companies.initech, "sam@shared.example", "Sam", "EMP-0201");
+      const sam: Identity = { sub: "sub-sam", email: "sam@shared.example", organizationId: ORG_INITECH };
+      await signedIn(autoLink, sam);
+      const [globexSam, initechSam] = await Promise.all([
+        db.user.findFirstOrThrow({ where: { organizationId: companies.globex, email: "sam@shared.example" }, include: { externalIdentities: true } }),
+        db.user.findFirstOrThrow({ where: { organizationId: companies.initech, email: "sam@shared.example" }, include: { externalIdentities: true } }),
+      ]);
+      assert.equal(initechSam.externalIdentities.length, 1);
+      assert.equal(globexSam.externalIdentities.length, 0, "the other company's account is never linked");
+      assert.equal((await linkAudits(globexSam.id)).length, 0);
+
+      // An address known only in another company is not enrolled here, and links nothing there.
+      const cross = await signIn(autoLink, { sub: "sub-dora-at-initech", email: "dora@globex.example", organizationId: ORG_INITECH });
+      assert.equal(cross.error, "not_enrolled");
+      assert.equal(await db.externalIdentity.count({ where: { subject: "sub-dora-at-initech" } }), 0);
+    });
+
+    it("with the setting on, an account that is already linked is never re-linked (another identity, or another issuer)", async () => {
+      // Ben is linked to sub-ben (above); a different WorkEasy360 identity with his address is refused.
+      const ben2 = await signIn(autoLink, { ...ben, sub: "sub-ben-second" });
+      assert.equal(ben2.error, "account_conflict");
+      // An account linked under the previous issuer name (before move-issuer ran) is not linked a second time.
+      await addEmployee(companies.globex, "olga@globex.example", "Olga", "EMP-0104");
+      const olga = await db.user.findFirstOrThrow({ where: { organizationId: companies.globex, email: "olga@globex.example" } });
+      await db.externalIdentity.create({ data: { organizationId: companies.globex, userId: olga.id, issuer: "https://auth.previous.example", subject: "sub-olga" } });
+      const landing = await signIn(autoLink, { sub: "sub-olga", email: "olga@globex.example", organizationId: ORG_GLOBEX });
+      assert.equal(landing.error, "account_conflict");
+      assert.equal(await db.externalIdentity.count({ where: { userId: olga.id } }), 1);
+      assert.equal((await linkAudits(olga.id)).length, 0);
+    });
+
+    it("the operator's link-user links an existing account, audited with who and why; the person then signs in with the setting off", async () => {
+      await addEmployee(companies.globex, "hugo@globex.example", "Hugo", "EMP-0105");
+      const hugo: Identity = { sub: "sub-hugo", email: "Hugo@Globex.example", organizationId: ORG_GLOBEX };
+      const linked = await vouch(hugo);
+      assert.equal(linked.changed, true);
+      const user = await db.user.findFirstOrThrow({ where: { organizationId: companies.globex, email: "hugo@globex.example" } });
+      assert.equal(linked.user.id, user.id);
+      assert.ok(user.passwordHash, "the password is left as it is");
+      const audits = await linkAudits(user.id);
+      assert.equal(audits.length, 1);
+      assert.equal(audits[0].organizationId, companies.globex);
+      assert.equal(audits[0].actorUserId, null, "the operator is not an HRMS user; who is recorded as the actor");
+      assert.ok(audits[0].createdAt instanceof Date);
+      assert.deepEqual(audits[0].after, {
+        issuer: provider.issuer,
+        subject: "sub-hugo",
+        email: "hugo@globex.example",
+        workeasy360OrganizationId: ORG_GLOBEX,
+        via: "operator",
+        ...OPERATOR,
+      });
+      const { token } = await signedIn(one, hugo);
+      assert.equal(((await call(one, token, "/api/auth/me")).body as { id: string }).id, user.id);
+      // Running it again changes nothing and writes no second record.
+      assert.equal((await vouch(hugo)).changed, false);
+      assert.equal((await linkAudits(user.id)).length, 1);
+    });
+
+    it("link-user refuses conflicts and incomplete requests, and changes nothing", async () => {
+      await addEmployee(companies.globex, "ivy@globex.example", "Ivy", "EMP-0106");
+      const ivy: Identity = { sub: "sub-ivy", email: "ivy@globex.example", organizationId: ORG_GLOBEX };
+      const refusals: Array<[string, () => Promise<unknown>, RegExp]> = [
+        ["the account is linked to another identity", () => vouch({ ...ben, sub: "sub-ben-other" }), /already linked/],
+        ["the identity is linked to another account", () => vouch({ ...ivy, sub: "sub-ben" }), /already linked to ben@globex\.example/],
+        ["the account is not in the company bound to the organization", () => vouch({ ...ivy, organizationId: ORG_INITECH }), /has no account with the address/],
+        ["no company is bound to the organization", () => vouch({ ...ivy, organizationId: randomUUID() }), /No HRMS company is bound/],
+        ["the organization is not a UUID", () => vouch({ ...ivy, organizationId: "globex" }), /must be a UUID/],
+        ["no actor", () => linkUser(db, { email: "ivy@globex.example", subject: ivy.sub, workeasy360OrganizationId: ORG_GLOBEX, issuer: provider.issuer, actor: " ", reason: "r" }), /--actor is required/],
+        ["no reason", () => linkUser(db, { email: "ivy@globex.example", subject: ivy.sub, workeasy360OrganizationId: ORG_GLOBEX, issuer: provider.issuer, actor: "a", reason: "" }), /--reason is required/],
+        ["no issuer", () => linkUser(db, { email: "ivy@globex.example", subject: ivy.sub, workeasy360OrganizationId: ORG_GLOBEX, issuer: "", ...OPERATOR }), /issuer is unknown/],
+      ];
+      const linksBefore = await db.externalIdentity.count();
+      const auditsBefore = await db.auditLog.count({ where: { action: "user.workeasy360_linked" } });
+      for (const [name, attempt, message] of refusals) {
+        await assert.rejects(attempt(), (error: unknown) => error instanceof OperatorError && message.test(error.message), name);
+      }
+      assert.equal(await db.externalIdentity.count(), linksBefore);
+      assert.equal(await db.auditLog.count({ where: { action: "user.workeasy360_linked" } }), auditsBefore);
+      assert.equal((await signIn(one, ivy)).error, "account_conflict", "Ivy is still unlinked");
+    });
+
+    it("binding a company is audited", async () => {
+      const bound = await db.auditLog.findFirstOrThrow({ where: { action: "organization.workeasy360_bound", entityId: companies.hooli } });
+      assert.deepEqual(bound.after, { workeasy360OrganizationId: ORG_HOOLI, via: "operator", actor: null, reason: null });
     });
   });
 
@@ -512,6 +681,7 @@ describe("WorkEasy360 sign-in, sessions and back-channel logout (two API instanc
     it("an exit ends the session and refuses the next WorkEasy360 sign-in", async () => {
       const employee = await addEmployee(companies.globex, "eve@globex.example", "Eve", "EMP-0099");
       const eve: Identity = { sub: "sub-eve", email: "eve@globex.example", organizationId: ORG_GLOBEX };
+      await vouch(eve);
       const session = await signedIn(one, eve);
       const { userId } = await db.employee.findUniqueOrThrow({ where: { id: employee } });
       await db.user.update({ where: { id: userId }, data: { disabledAt: new Date() } });

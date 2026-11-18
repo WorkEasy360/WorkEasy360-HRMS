@@ -9,7 +9,17 @@ export class OperatorError extends Error {
   }
 }
 
-type Db = Pick<PrismaClient, "organization" | "authSession" | "refreshToken" | "externalIdentity" | "$transaction">;
+type Db = Pick<PrismaClient, "organization" | "authSession" | "refreshToken" | "externalIdentity" | "user" | "auditLog" | "$transaction">;
+
+/** Who asked for an operator change and why: written into its audit record. */
+export interface OperatorAudit {
+  actor?: string;
+  reason?: string;
+}
+
+function auditTrail(audit: OperatorAudit | undefined) {
+  return { via: "operator", actor: audit?.actor?.trim() || null, reason: audit?.reason?.trim() || null };
+}
 
 async function findCompany(db: Db, reference: string) {
   const company = await db.organization.findFirst({
@@ -23,10 +33,11 @@ async function findCompany(db: Db, reference: string) {
 /**
  * Binds an existing HRMS company to a WorkEasy360 organization, so WorkEasy360 sign-ins for
  * that organization land in it instead of creating a new, empty company. Each employee's
- * account is linked to their WorkEasy360 identity at their own first WorkEasy360 sign-in (by the
- * verified address); nothing else changes, and password sign-in keeps working.
+ * account is then linked to their WorkEasy360 identity with `linkUser` (or, only with
+ * WORKEASY360_LINK_BY_VERIFIED_EMAIL=true, at their first sign-in); nothing else changes, and
+ * password sign-in keeps working. Audited (`organization.workeasy360_bound`).
  */
-export async function linkOrganization(db: Db, companyReference: string, workeasy360OrganizationId: string) {
+export async function linkOrganization(db: Db, companyReference: string, workeasy360OrganizationId: string, audit?: OperatorAudit) {
   if (!UUID.test(workeasy360OrganizationId)) throw new OperatorError("The WorkEasy360 organization id must be a UUID.");
   const target = workeasy360OrganizationId.toLowerCase();
   const company = await findCompany(db, companyReference);
@@ -44,7 +55,18 @@ export async function linkOrganization(db: Db, companyReference: string, workeas
         "If a first sign-in created that company and it is empty, unbind or delete it first.",
     );
   }
-  await db.organization.update({ where: { id: company.id }, data: { workeasy360OrganizationId: target } });
+  await db.$transaction([
+    db.organization.update({ where: { id: company.id }, data: { workeasy360OrganizationId: target } }),
+    db.auditLog.create({
+      data: {
+        organizationId: company.id,
+        action: "organization.workeasy360_bound",
+        entityType: "Organization",
+        entityId: company.id,
+        after: { workeasy360OrganizationId: target, ...auditTrail(audit) },
+      },
+    }),
+  ]);
   return { company: { ...company, workeasy360OrganizationId: target }, changed: true };
 }
 
@@ -54,7 +76,7 @@ export async function linkOrganization(db: Db, companyReference: string, workeas
  * WorkEasy360 identities are removed, so a later binding starts clean. Password sign-in is
  * unaffected; accounts that have no password can no longer sign in until it is bound again.
  */
-export async function unlinkOrganization(db: Db, companyReference: string) {
+export async function unlinkOrganization(db: Db, companyReference: string, audit?: OperatorAudit) {
   const company = await findCompany(db, companyReference);
   if (!company.workeasy360OrganizationId) return { company, changed: false, sessionsEnded: 0, identitiesRemoved: 0 };
   const now = new Date();
@@ -69,8 +91,106 @@ export async function unlinkOrganization(db: Db, companyReference: string) {
       data: { revokedAt: now },
     }),
     db.externalIdentity.deleteMany({ where: { organizationId: company.id } }),
+    db.auditLog.create({
+      data: {
+        organizationId: company.id,
+        action: "organization.workeasy360_unbound",
+        entityType: "Organization",
+        entityId: company.id,
+        before: { workeasy360OrganizationId: company.workeasy360OrganizationId },
+        after: auditTrail(audit),
+      },
+    }),
   ]);
   return { company: { ...company, workeasy360OrganizationId: null }, changed: true, sessionsEnded: ended.count, identitiesRemoved: removed.count };
+}
+
+export interface LinkUserRequest {
+  /** The account's address in the company. */
+  email: string;
+  /** The person's WorkEasy360 `sub`, as WorkEasy360 Accounts shows it. */
+  subject: string;
+  /** The WorkEasy360 organization; the account must belong to the company bound to it. */
+  workeasy360OrganizationId: string;
+  /** The issuer the link is for (WORKEASY360_ISSUER). */
+  issuer: string;
+  /** Who vouches for this link, and why (both required, both audited). */
+  actor: string;
+  reason: string;
+}
+
+/**
+ * An operator-vouched link: binds one existing HRMS account to a WorkEasy360 identity
+ * `(issuer, sub)` in the company bound to the stated WorkEasy360 organization, so that person's
+ * WorkEasy360 sign-ins land in that account. This is how existing people are linked: a sign-in
+ * whose address matches an unlinked account is refused (`account_conflict`) unless
+ * WORKEASY360_LINK_BY_VERIFIED_EMAIL=true.
+ *
+ * Refused when the account is already linked (to another identity, or under another issuer) or
+ * the identity is already linked to another account of the company. Running it again with the
+ * same link changes nothing. The identity and its audit record (`user.workeasy360_linked`,
+ * via "operator", with actor and reason) are written in one transaction. The password is left
+ * as it is: WORKEASY360_SSO_ONLY=true is what switches password sign-in off.
+ */
+export async function linkUser(db: Db, request: LinkUserRequest) {
+  const email = request.email.trim().toLowerCase();
+  const subject = request.subject.trim();
+  const issuer = request.issuer.trim();
+  const actor = request.actor.trim();
+  const reason = request.reason.trim();
+  if (!email) throw new OperatorError("--email is required.");
+  if (!subject) throw new OperatorError("--subject is required.");
+  if (!issuer) throw new OperatorError("The issuer is unknown: set WORKEASY360_ISSUER or pass --issuer.");
+  if (issuer.endsWith("/")) throw new OperatorError("Issuers are compared exactly: drop the trailing slash.");
+  if (!actor) throw new OperatorError("--actor is required: who vouches for this link.");
+  if (!reason) throw new OperatorError("--reason is required: why this account is this person.");
+  if (!UUID.test(request.workeasy360OrganizationId)) throw new OperatorError("The WorkEasy360 organization id must be a UUID.");
+  const organization = request.workeasy360OrganizationId.toLowerCase();
+
+  const company = await db.organization.findUnique({
+    where: { workeasy360OrganizationId: organization },
+    select: { id: true, name: true, slug: true },
+  });
+  if (!company) {
+    throw new OperatorError(`No HRMS company is bound to WorkEasy360 organization ${organization}. Bind it first with link-organization.`);
+  }
+  const user = await db.user.findUnique({
+    where: { organizationId_email: { organizationId: company.id, email } },
+    select: { id: true, email: true, externalIdentities: { select: { issuer: true, subject: true } } },
+  });
+  if (!user) throw new OperatorError(`${company.name} (${company.slug}) has no account with the address ${email}.`);
+
+  const existing = user.externalIdentities;
+  if (existing.length === 1 && existing[0].issuer === issuer && existing[0].subject === subject) {
+    return { company, user: { id: user.id, email: user.email }, issuer, subject, changed: false };
+  }
+  if (existing.length > 0) {
+    const links = existing.map((link) => `${link.subject} at ${link.issuer}`).join(", ");
+    throw new OperatorError(`${email} in ${company.slug} is already linked (${links}). Nothing was changed.`);
+  }
+  const holder = await db.externalIdentity.findUnique({
+    where: { issuer_subject_organizationId: { issuer, subject, organizationId: company.id } },
+    select: { userId: true, user: { select: { email: true } } },
+  });
+  if (holder) {
+    throw new OperatorError(
+      `WorkEasy360 identity ${subject} is already linked to ${holder.user.email} (${holder.userId}) in ${company.slug}. Nothing was changed.`,
+    );
+  }
+
+  await db.$transaction([
+    db.externalIdentity.create({ data: { organizationId: company.id, userId: user.id, issuer, subject, email } }),
+    db.auditLog.create({
+      data: {
+        organizationId: company.id,
+        action: "user.workeasy360_linked",
+        entityType: "User",
+        entityId: user.id,
+        after: { issuer, subject, email, workeasy360OrganizationId: organization, via: "operator", actor, reason },
+      },
+    }),
+  ]);
+  return { company, user: { id: user.id, email: user.email }, issuer, subject, changed: true };
 }
 
 async function workeasy360Families(db: Db, organizationId: string): Promise<string[]> {

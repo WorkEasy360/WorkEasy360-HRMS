@@ -27,11 +27,17 @@ export interface SignedIn {
  *   this person as its Admin (unless WORKEASY360_CREATE_ORGANIZATIONS=false; an operator binds an
  *   existing company with `workeasy360 link-organization`). A sign-in never lands in a company
  *   bound to another organization, so it can never cross organizations.
- * - The person is found by `(issuer, sub)` inside that company. A first sign-in links the
- *   company's existing account with the verified address (WorkEasy360 has verified the address
- *   and the membership; the operator or the first sign-in bound the company). An account linked
- *   to another WorkEasy360 identity is refused, and nobody is created: employees and their HR
- *   roles come from HRMS's own records, so someone HR has not added is told to ask HR.
+ * - The person is found by `(issuer, sub)` inside that company. Nobody is created: employees and
+ *   their HR roles come from HRMS's own records, so someone HR has not added is `not_enrolled`.
+ * - An existing account with the same address is **not** merged by default: the sign-in is
+ *   refused with `account_conflict` and the person is told to ask their administrator, who links
+ *   the account with the audited operator command `workeasy360 link-user` (an operator-vouched
+ *   link). Only with WORKEASY360_LINK_BY_VERIFIED_EMAIL=true does a first sign-in link it itself,
+ *   and then only an account of this bound company (never another company's), with
+ *   `email_verified` true, that has no WorkEasy360 link under any issuer; every such link is
+ *   audited (`user.workeasy360_linked`, via "automatic").
+ * - Linking never touches the password: password sign-in keeps working until
+ *   WORKEASY360_SSO_ONLY=true switches it off (docs/workeasy360-sso.md).
  * - Roles and permissions are the account's own HRMS roles; nothing is authorized on `sub`.
  */
 export async function provisionSignIn(claims: VerifiedIdToken, issuer: string): Promise<SignedIn> {
@@ -110,29 +116,43 @@ async function signInToOrganization(organizationId: string, claims: VerifiedIdTo
     return { userId: identity.userId, organizationId, organizationCreated: false, linked: false };
   }
 
-  // 2. First WorkEasy360 sign-in of this person here: the company's account with this verified address.
+  // 2. First WorkEasy360 sign-in of this person here. The lookup is scoped to the company bound to
+  //    the token's organization, so another company's account with this address is never seen.
   const user = await prisma.user.findUnique({
     where: { organizationId_email: { organizationId, email } },
-    select: { id: true, externalIdentities: { where: { issuer }, select: { subject: true } } },
+    select: { id: true, _count: { select: { externalIdentities: true } } },
   });
   if (!user) {
     throw new SsoRefusal("not_enrolled", `company ${organizationId} has no account for this address`);
   }
-  if (user.externalIdentities.length > 0) {
+  if (user._count.externalIdentities > 0) {
+    // Linked already (to another WorkEasy360 account, or under another issuer before a
+    // move-issuer): never re-linked by a sign-in.
     throw new SsoRefusal("account_conflict", `user ${user.id} is linked to another WorkEasy360 account`);
   }
+  if (!workeasy360.linkByVerifiedEmail) {
+    throw new SsoRefusal("account_conflict", `user ${user.id} has this address but is not linked; an operator links it with link-user`);
+  }
+  if ((claims as { email_verified?: unknown }).email_verified !== true) {
+    throw new SsoRefusal("email_unverified", "an automatic link needs a verified address");
+  }
   await assertActive(user.id);
-  await prisma.externalIdentity.create({
-    data: { organizationId, userId: user.id, issuer, subject, email, lastLoginAt: new Date() },
-  });
-  await writeAuditLog({
-    organizationId,
-    actorUserId: user.id,
-    action: "user.workeasy360_linked",
-    entityType: "User",
-    entityId: user.id,
-    after: { issuer, subject },
-  });
+  await prisma.$transaction([
+    prisma.externalIdentity.create({
+      data: { organizationId, userId: user.id, issuer, subject, email, lastLoginAt: new Date() },
+    }),
+    // In the same transaction: an automatic link without its audit record never happens.
+    prisma.auditLog.create({
+      data: {
+        organizationId,
+        actorUserId: user.id,
+        action: "user.workeasy360_linked",
+        entityType: "User",
+        entityId: user.id,
+        after: { issuer, subject, email, workeasy360OrganizationId: claims.organization_id.toLowerCase(), via: "automatic" },
+      },
+    }),
+  ]);
   return { userId: user.id, organizationId, organizationCreated: false, linked: true };
 }
 

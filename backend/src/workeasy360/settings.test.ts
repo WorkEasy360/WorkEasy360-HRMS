@@ -56,6 +56,19 @@ describe("WorkEasy360 settings", () => {
     assert.ok(isAcceptableUrl("https://accounts.workeasy360.com"));
   });
 
+  it("links by verified email only when WORKEASY360_LINK_BY_VERIFIED_EMAIL is exactly true (default off)", () => {
+    configure({});
+    assert.equal(workeasy360.linkByVerifiedEmail, false);
+    for (const value of ["", "false", "1", "yes", "on"]) {
+      configure({ WORKEASY360_LINK_BY_VERIFIED_EMAIL: value });
+      assert.equal(workeasy360.linkByVerifiedEmail, false, value);
+    }
+    configure({ WORKEASY360_LINK_BY_VERIFIED_EMAIL: "true" });
+    assert.equal(workeasy360.linkByVerifiedEmail, true);
+    configure({ WORKEASY360_LINK_BY_VERIFIED_EMAIL: " TRUE " });
+    assert.equal(workeasy360.linkByVerifiedEmail, true);
+  });
+
   it("refuses to start half configured, with an http issuer in production, or a trailing slash", () => {
     configure({ WORKEASY360_ISSUER: "https://accounts.workeasy360.com" });
     assert.match(configurationProblems().join(), /partly configured/);
